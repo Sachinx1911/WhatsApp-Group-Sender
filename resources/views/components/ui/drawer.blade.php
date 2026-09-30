@@ -9,7 +9,7 @@
     x-on:open-modal.window="if (modalName($event.detail) === @js($name)) open = true"
     x-on:close-modal.window="if (modalName($event.detail) === @js($name)) open = false"
     x-on:keydown.escape.window="if (open && isTopModal(@js($name))) open = false"
-    x-show="open" x-cloak class="fixed inset-0 z-50" role="dialog" aria-modal="true">
+    x-show="open" x-cloak class="fixed inset-0 z-50" role="dialog" aria-modal="true" @if ($title) aria-label="{{ $title }}" @endif>
     <div x-show="open" x-transition.opacity class="absolute inset-0 bg-navy/40" x-on:click="open = false"></div>
 
     <aside x-show="open" x-trap.noscroll="open"

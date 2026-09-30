@@ -52,6 +52,12 @@
     }
 }
 
+/* Settings → Appearance → Compact tables. Unlayered, so it wins over the py-* utilities. */
+.compact-tables tbody td {
+    padding-top: 0.375rem;
+    padding-bottom: 0.375rem;
+}
+
 /* WhatsApp-style message preview (components/ui/whatsapp-preview.blade.php) */
 @layer components {
     .wa-chat {

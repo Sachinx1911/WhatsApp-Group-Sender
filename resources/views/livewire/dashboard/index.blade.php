@@ -139,7 +139,7 @@
                                 <td class="px-3 py-3"><x-ui.status-badge :status="$campaign->status" /></td>
                                 <td class="whitespace-nowrap px-3 py-3 text-muted">{{ $campaign->created_at->format('d M, g:i A') }}</td>
                                 <td class="px-5 py-3 text-right">
-                                    <a href="{{ route('history.index', ['search' => $campaign->title]) }}" class="font-medium text-primary hover:underline">View</a>
+                                    <a href="{{ route('campaigns.show', $campaign) }}" class="font-medium text-primary hover:underline">View</a>
                                 </td>
                             </tr>
                         @endforeach

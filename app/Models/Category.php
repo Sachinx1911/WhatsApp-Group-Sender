@@ -37,6 +37,16 @@ class Category extends Model
         $query->orderBy('sort_order')->orderBy('name');
     }
 
+    /** Settings → Group Settings → Default category, else "Other", else the first category. */
+    public static function default(): ?self
+    {
+        $id = config('educationhub.groups.default_category_id');
+
+        return ($id ? static::find($id) : null)
+            ?? static::firstWhere('name', 'Other')
+            ?? static::query()->ordered()->first();
+    }
+
     /** Categories that still have groups cannot be deleted (docs/MASTER_PROMPT.md §13). */
     public function isDeletable(): bool
     {

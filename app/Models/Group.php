@@ -59,9 +59,12 @@ class Group extends Model
             return;
         }
 
-        $query->where(function (Builder $query) use ($term) {
-            $query->where('name', 'like', "%{$term}%")
-                ->orWhereHas('category', fn (Builder $q) => $q->where('name', 'like', "%{$term}%"));
+        // Settings → Group Settings → Group search: "contains" (default) or "starts with".
+        $pattern = config('educationhub.groups.search_mode') === 'starts_with' ? "{$term}%" : "%{$term}%";
+
+        $query->where(function (Builder $query) use ($pattern) {
+            $query->where('name', 'like', $pattern)
+                ->orWhereHas('category', fn (Builder $q) => $q->where('name', 'like', $pattern));
         });
     }
 

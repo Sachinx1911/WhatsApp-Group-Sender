@@ -196,7 +196,7 @@ class ComposeTest extends TestCase
             ->assertHasErrors(['form.groups' => 'max']);
     }
 
-    public function test_large_selection_needs_the_typed_count_and_nothing_is_sent_yet(): void
+    public function test_large_selection_needs_the_typed_count_before_a_campaign_is_created(): void
     {
         config(['educationhub.sending.large_selection_threshold' => 2]);
         $groups = Group::factory()->for($this->mpsc)->count(3)->create();
@@ -210,14 +210,20 @@ class ComposeTest extends TestCase
             ->assertHasErrors('form.confirmCount')
             ->set('form.confirmCount', '2')
             ->call('startSending')
-            ->assertHasErrors('form.confirmCount')
+            ->assertHasErrors('form.confirmCount');
+
+        $this->assertSame(0, Campaign::count()); // nothing created without the right number
+
+        $component = Livewire::test(Compose::class)
+            ->set('form.message', 'आजच्या चालू घडामोडी')
+            ->set('form.groups', $this->ids($groups))
             ->set('form.confirmCount', ' 3 ')
             ->call('startSending')
-            ->assertHasNoErrors()
-            ->assertDispatched('toast', type: 'info');
+            ->assertHasNoErrors();
 
-        // The campaign engine arrives in Phase 9.
-        $this->assertSame(0, Campaign::count());
+        $campaign = Campaign::sole();
+        $component->assertRedirect(route('campaigns.show', $campaign))->assertDispatched('campaign-started');
+        $this->assertSame(3, $campaign->total_groups);
     }
 
     public function test_small_selection_needs_no_typed_confirmation(): void

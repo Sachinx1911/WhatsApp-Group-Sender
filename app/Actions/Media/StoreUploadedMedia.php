@@ -49,8 +49,11 @@ class StoreUploadedMedia
                     $this->images->compress($absolute, $mime);
                 }
 
-                $thumbnail = "{$directory}/thumbnails/{$filename}";
-                Storage::disk('local')->put($thumbnail, $this->images->thumbnail($absolute, $mime, (int) config('educationhub.media.thumbnail_size', 320)));
+                // Without a thumbnail, previews fall back to the full image (MediaFileController).
+                if (config('educationhub.media.generate_thumbnails', true)) {
+                    $thumbnail = "{$directory}/thumbnails/{$filename}";
+                    Storage::disk('local')->put($thumbnail, $this->images->thumbnail($absolute, $mime, (int) config('educationhub.media.thumbnail_size', 320)));
+                }
             }
         } catch (Throwable $e) {
             Storage::disk('local')->delete(array_filter([$path, $thumbnail]));

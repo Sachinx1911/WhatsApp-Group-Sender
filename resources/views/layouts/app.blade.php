@@ -1,14 +1,18 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" @class(['compact-tables' => config('educationhub.appearance.compact_tables')])>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex, nofollow">
     <title>{{ isset($title) ? $title.' · ' : '' }}{{ config('app.name') }}</title>
     <script>
-        // Apply the saved sidebar state before first paint to avoid a layout jump.
+        // Apply the sidebar state before first paint to avoid a layout jump: the ☰ choice saved in this
+        // browser wins, otherwise Settings → Appearance → Sidebar collapsed by default.
         try {
-            if (localStorage.getItem('sidebar-collapsed') === '1') document.documentElement.classList.add('sidebar-collapsed');
+            const saved = localStorage.getItem('sidebar-collapsed');
+            if (saved === null ? @js((bool) config('educationhub.appearance.sidebar_collapsed')) : saved === '1') {
+                document.documentElement.classList.add('sidebar-collapsed');
+            }
         } catch (e) {}
     </script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])

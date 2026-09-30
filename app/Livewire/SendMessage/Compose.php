@@ -2,14 +2,18 @@
 
 namespace App\Livewire\SendMessage;
 
+use App\Actions\Campaigns\CreateCampaign;
 use App\Actions\Media\StoreUploadedMedia;
+use App\Enums\CampaignStatus;
 use App\Enums\GroupStatus;
 use App\Livewire\Forms\SendForm;
+use App\Models\Campaign;
 use App\Models\Category;
 use App\Models\Group;
 use App\Models\Media;
 use App\Models\MessageTemplate;
 use App\Support\SendEstimate;
+use App\Support\Settings;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -50,12 +54,22 @@ class Compose extends Component
 
     /**
      * Prefill from links elsewhere in the app: ?template=ID (Templates "Use"),
-     * ?media=ID (Media Library "Use in Message") and ?groups[]=ID (Group details).
+     * ?campaign=ID (Send History "Send again"), ?media=ID (Media Library "Use in Message")
+     * and ?groups[]=ID (Group details).
      */
     public function mount(): void
     {
         if ($template = request()->integer('template')) {
             $this->applyTemplate($template, notify: false);
+        }
+
+        // "Send again" from Send History: same message, attachment and (still active) groups.
+        if ($previous = Campaign::find(request()->integer('campaign'))) {
+            $this->form->message = $previous->message;
+            $this->form->attachment_id = $previous->attachment_id;
+            $this->form->groups = Group::active()
+                ->whereIn('id', $previous->campaignGroups()->whereNotNull('group_id')->select('group_id'))
+                ->pluck('id')->map(fn ($id) => (string) $id)->all();
         }
 
         if (($media = request()->integer('media')) && Media::whereKey($media)->exists()) {
@@ -64,6 +78,12 @@ class Compose extends Component
 
         if ($groups = array_filter(array_map('intval', (array) request()->query('groups', [])))) {
             $this->form->groups = Group::active()->whereKey($groups)->pluck('id')->map(fn ($id) => (string) $id)->all();
+        }
+
+        // Settings → Group Settings → Remember previous group selection.
+        if (! $this->form->groups && config('educationhub.groups.remember_selection')) {
+            $this->form->groups = Group::active()->whereKey((array) config('educationhub.groups.last_selection'))
+                ->pluck('id')->map(fn ($id) => (string) $id)->all();
         }
     }
 
@@ -223,21 +243,58 @@ class Compose extends Component
         $this->dispatch('open-modal', self::REVIEW_MODAL);
     }
 
-    public function startSending(): void
+    public function startSending(CreateCampaign $create): void
     {
         $this->form->validateForSending();
 
-        // The campaign / queue engine is added in Phase 9. Until then nothing is sent.
-        $this->dispatch('close-modal', self::REVIEW_MODAL);
-        $this->dispatch('toast', type: 'info', message: 'Ready to send to '.count($this->form->groups).' groups. Sending is switched on in Phase 9 — nothing was sent.');
+        $campaign = $create->handle(
+            message: $this->form->finalMessage(),
+            attachment: $this->attachment,
+            groupIds: $this->form->groups,
+            template: $this->form->template_id ? MessageTemplate::find($this->form->template_id) : null,
+            user: auth()->user(),
+        );
+
+        if (config('educationhub.groups.remember_selection')) {
+            Settings::set(['educationhub.groups.last_selection' => array_map('intval', $this->form->groups)]);
+        }
+
+        $this->openProgress($campaign);
     }
 
-    public function startTest(): void
+    public function startTest(CreateCampaign $create): void
     {
         $this->form->validateMessage();
 
-        $this->dispatch('close-modal', self::TEST_MODAL);
-        $this->dispatch('toast', type: 'info', message: "Test to “{$this->testGroup?->name}” is ready. Sending is switched on in Phase 9 — nothing was sent.");
+        if (! $this->testGroup?->isActive()) {
+            $this->dispatch('toast', type: 'error', message: 'No active test group.');
+
+            return;
+        }
+
+        $campaign = $create->handle(
+            message: $this->form->finalMessage(),
+            attachment: $this->attachment,
+            groupIds: [$this->testGroup->id],
+            isTest: true,
+            user: auth()->user(),
+        );
+
+        $this->openProgress($campaign);
+    }
+
+    private function openProgress(Campaign $campaign): void
+    {
+        // Lets the page drop its "unsaved message" warning before it navigates away.
+        $this->dispatch('campaign-started');
+        session()->flash('toast', ['type' => 'success', 'message' => $campaign->status === CampaignStatus::Queued
+            ? 'Campaign created. It starts after the campaign that is sending now.'
+            : 'Sending started']);
+
+        // Settings → Sending → Show progress during sending.
+        config('educationhub.sending.show_progress', true)
+            ? $this->redirectRoute('campaigns.show', $campaign)
+            : $this->redirectRoute('history.index');
     }
 
     public function estimate(): string

@@ -628,7 +628,7 @@ Required indexes: `groups.name`, `groups.category_id`, `groups.status`, `campaig
 
 Never send to 250 groups from one synchronous HTTP request.
 
-* `CreateCampaignJob` creates the `campaign_groups` rows and dispatches one `SendToGroupJob` per group on the `whatsapp` queue.
+* The `CreateCampaign` action creates the campaign and its `campaign_groups` rows in one transaction; `StartCampaignJob` then dispatches one `SendToGroupJob` per pending group on the `whatsapp` queue (re-runnable safely: each job skips rows that are not pending).
 * Exactly **one** queue worker processes the `whatsapp` queue, so sends happen one at a time. There is a single browser profile.
 * `SendToGroupJob`:
   * at most **3 attempts**, with conservative backoff

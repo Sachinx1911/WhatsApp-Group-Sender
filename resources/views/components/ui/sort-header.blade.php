@@ -11,7 +11,7 @@
 <th {{ $attributes->class(['px-3 py-2.5 font-medium', 'text-right' => $align === 'right']) }}
     @if ($active) aria-sort="{{ $sortDir === 'asc' ? 'ascending' : 'descending' }}" @endif>
     <button type="button" wire:click="sortBy('{{ $column }}')"
-        @class(['inline-flex items-center gap-1 transition hover:text-ink', 'text-ink' => $active, 'flex-row-reverse' => $align === 'right'])>
+        @class(['inline-flex items-center gap-1 whitespace-nowrap transition hover:text-ink', 'text-ink' => $active, 'flex-row-reverse' => $align === 'right'])>
         {{ $slot }}
         @if ($active)
             @if ($sortDir === 'asc')

@@ -1,5 +1,5 @@
 <div class="relative" x-data="{ open: false }" x-on:click.outside="open = false" x-on:keydown.escape="open = false"
-    wire:poll.30s.visible>
+    wire:poll.30s="checkForNew">
     <button type="button" x-on:click="open = !open"
         class="relative grid size-10 place-items-center rounded-xl text-muted transition hover:bg-canvas hover:text-ink"
         aria-label="Notifications{{ $this->unreadCount ? " ({$this->unreadCount} unread)" : '' }}">

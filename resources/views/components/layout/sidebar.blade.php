@@ -22,7 +22,7 @@
         @foreach ($navItems as $item)
             @php
                 // "groups.index" is active on every "groups.*" page (e.g. group details).
-                $active = request()->routeIs(Str::contains($item['route'], '.') ? Str::before($item['route'], '.').'.*' : $item['route']);
+                $active = request()->routeIs(...($item['match'] ?? [Str::contains($item['route'], '.') ? Str::before($item['route'], '.').'.*' : $item['route']]));
             @endphp
             <a href="{{ route($item['route']) }}" title="{{ $item['label'] }}"
                 @if ($active) aria-current="page" @endif

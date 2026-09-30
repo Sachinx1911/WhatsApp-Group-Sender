@@ -65,7 +65,7 @@ class GroupCsv
 
         $categories = Category::pluck('name')->mapWithKeys(fn ($n) => [mb_strtolower($n) => $n]);
         $existing = Group::pluck('name')->mapWithKeys(fn ($n) => [mb_strtolower($n) => true]);
-        $defaultCategory = $categories->get('other') ?? $categories->first() ?? 'Other';
+        $defaultCategory = Category::default()?->name ?? 'Other';
         $seen = [];
         $rows = [];
 

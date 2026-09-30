@@ -1,15 +1,19 @@
 <?php
 
 use App\Http\Controllers\Auth\LogoutController;
+use App\Http\Controllers\BackupController;
 use App\Http\Controllers\GroupCsvController;
 use App\Http\Controllers\MediaFileController;
 use App\Livewire\Auth\Login;
+use App\Livewire\Campaigns;
 use App\Livewire\Dashboard;
+use App\Livewire\FailedMessages;
 use App\Livewire\Groups;
+use App\Livewire\History;
 use App\Livewire\Media;
 use App\Livewire\SendMessage;
+use App\Livewire\Settings;
 use App\Livewire\Templates;
-use App\Support\Navigation;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -22,6 +26,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/groups/export', [GroupCsvController::class, 'export'])->name('groups.export');
     Route::get('/groups/import/sample', [GroupCsvController::class, 'sample'])->name('groups.import.sample');
     Route::livewire('/send', SendMessage\Compose::class)->name('send.create');
+    Route::livewire('/history', History\Index::class)->name('history.index');
+    Route::livewire('/failed', FailedMessages\Index::class)->name('failed.index');
+    Route::livewire('/campaigns/{campaign}', Campaigns\Show::class)->name('campaigns.show');
 
     Route::livewire('/groups', Groups\Index::class)->name('groups.index');
     Route::livewire('/groups/{group}', Groups\Show::class)->name('groups.show');
@@ -33,14 +40,8 @@ Route::middleware('auth')->group(function () {
     Route::get('/media/{media}/thumbnail', [MediaFileController::class, 'thumbnail'])->name('media.thumbnail');
     Route::get('/media/{media}/download', [MediaFileController::class, 'download'])->name('media.download');
 
-    // Screens built in later phases show a placeholder until then.
-    foreach ([
-        'history.index' => '/history',
-        'failed.index' => '/failed',
-        'settings.index' => '/settings',
-    ] as $name => $uri) {
-        Route::view($uri, 'pages.coming-soon', ['item' => Navigation::find($name)])->name($name);
-    }
+    Route::livewire('/settings', Settings\Index::class)->name('settings.index');
+    Route::get('/settings/backups/{name}', [BackupController::class, 'download'])->name('backups.download');
 
     Route::post('/logout', LogoutController::class)->name('logout');
 });

@@ -2,6 +2,7 @@
         leaving: false,
         get dirty() { return ! this.leaving && !! ($wire.form.message || $wire.form.attachment_id || $wire.form.groups.length) },
     }"
+    x-on:campaign-started.window="leaving = true"
     x-on:beforeunload.window="if (dirty) { $event.preventDefault(); $event.returnValue = '' }"
     class="pb-32 sm:pb-24">
     <x-ui.page-header title="Send Message" subtitle="Create and distribute educational content to selected WhatsApp groups" />
@@ -45,9 +46,11 @@
                                 @endforeach
                             </div>
                         </div>
+                        @if (config('educationhub.message.show_counter'))
                         <span class="ml-auto pr-1 text-xs text-muted" :class="length > {{ \App\Support\WhatsAppFormatter::MAX_LENGTH }} && 'font-medium text-danger'">
                             <span x-text="length.toLocaleString()"></span> / {{ number_format(\App\Support\WhatsAppFormatter::MAX_LENGTH) }}
                         </span>
+                        @endif
                     </div>
                     <textarea wire:ignore x-ref="textarea" x-model="text" rows="11" aria-label="Message" placeholder="Write your message here..."
                         class="block w-full resize-y border-0 px-4 py-3 text-[15px] leading-relaxed outline-none"></textarea>
@@ -69,7 +72,7 @@
                             <span class="block truncate text-sm font-medium">{{ $attachment->original_name }}</span>
                             <span class="block text-xs text-muted">{{ $attachment->type->label() }} · {{ $attachment->humanSize() }}</span>
                         </span>
-                        <x-ui.button variant="ghost" size="sm" x-on:click="$dispatch('pick-media', { context: '{{ \App\Livewire\SendMessage\Compose::PICKER_CONTEXT }}' })">Change</x-ui.button>
+                        <x-ui.button variant="ghost" size="sm" x-on:click="$dispatch('pick-media', { context: '{{ \App\Livewire\SendMessage\Compose::PICKER_CONTEXT }}', type: '{{ config('educationhub.message.default_type') === 'text' ? '' : config('educationhub.message.default_type') }}' })">Change</x-ui.button>
                         <button type="button" wire:click="removeAttachment" class="rounded-lg p-2 text-muted hover:bg-danger-soft hover:text-danger" aria-label="Remove attachment">
                             <x-lucide-x class="size-4" />
                         </button>
@@ -93,7 +96,7 @@
                         </label>
                         <div class="mt-3 flex flex-wrap justify-center gap-2">
                             <x-ui.button variant="secondary" size="sm" icon="folder-open" x-on:click="$refs.file.click()">Browse Files</x-ui.button>
-                            <x-ui.button variant="secondary" size="sm" icon="image" x-on:click="$dispatch('pick-media', { context: '{{ \App\Livewire\SendMessage\Compose::PICKER_CONTEXT }}' })">Choose from Media Library</x-ui.button>
+                            <x-ui.button variant="secondary" size="sm" icon="image" x-on:click="$dispatch('pick-media', { context: '{{ \App\Livewire\SendMessage\Compose::PICKER_CONTEXT }}', type: '{{ config('educationhub.message.default_type') === 'text' ? '' : config('educationhub.message.default_type') }}' })">Choose from Media Library</x-ui.button>
                         </div>
                     </div>
                 @endif
@@ -129,7 +132,7 @@
                             @endforeach
                         </select>
                         <div class="flex shrink-0 rounded-xl border border-line p-0.5 text-[13px]" role="group" aria-label="Show">
-                            @foreach (['active' => 'Active', 'inactive' => 'Inactive', 'selected' => 'Selected'] as $value => $label)
+                            @foreach (array_filter(['active' => 'Active', 'inactive' => config('educationhub.groups.show_inactive_in_selector') ? 'Inactive' : null, 'selected' => 'Selected']) as $value => $label)
                                 <button type="button" wire:click="$set('groupView', '{{ $value }}')" aria-pressed="{{ $groupView === $value ? 'true' : 'false' }}"
                                     @class(['rounded-lg px-2.5 py-1.5 transition', 'bg-primary text-white' => $groupView === $value, 'text-muted hover:text-ink' => $groupView !== $value])>{{ $label }}</button>
                             @endforeach
@@ -217,7 +220,7 @@
                 @endif
             </p>
             <div class="flex w-full gap-2 sm:ml-auto sm:w-auto">
-                <div class="hidden sm:block"><x-ui.button variant="ghost" x-on:click="if (! dirty || confirm('Discard this message?')) { leaving = true; window.location = @js(route('dashboard')) }">Cancel</x-ui.button></div>
+                <div class="hidden sm:block"><x-ui.button variant="ghost" x-on:click="if (! dirty || confirm('Discard this message?')) { leaving = true; window.location = '{{ route('dashboard') }}' }">Cancel</x-ui.button></div>
                 <x-ui.button variant="secondary" icon="flask-conical" class="flex-1 sm:flex-none" wire:click="sendTest" wire:loading.attr="disabled" wire:target="sendTest">Send Test</x-ui.button>
                 <x-ui.button icon="send" class="flex-1 sm:flex-none" wire:click="review" wire:loading.attr="disabled" wire:target="review">Review & Send</x-ui.button>
             </div>

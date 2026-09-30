@@ -28,10 +28,11 @@ class Picker extends Component
     public string $type = '';
 
     #[On('pick-media')]
-    public function open(string $context): void
+    public function open(string $context, string $type = ''): void
     {
         $this->context = $context;
-        $this->reset('search', 'type');
+        $this->reset('search');
+        $this->type = MediaType::tryFrom($type)?->value ?? '';
         $this->resetPage();
         $this->dispatch('open-modal', self::MODAL);
     }

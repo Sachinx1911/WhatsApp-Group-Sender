@@ -44,6 +44,7 @@
         "dev": [
             "Composer\\Config::disableProcessTimeout",
             "docker compose up -d --wait",
+            "@php artisan campaigns:recover",
             "npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74\" \"php artisan serve --host=127.0.0.1 --port=8010\" \"php artisan queue:listen --queue=whatsapp,default --tries=1 --timeout=0\" \"npm run dev\" --names=server,queue,vite --kill-others"
         ],
         "test": [

@@ -26,9 +26,11 @@
                 <div>
                     <div class="mb-1.5 flex items-end justify-between">
                         <label for="template-message" class="text-[13px] font-medium">Message</label>
+                        @if (config('educationhub.message.show_counter'))
                         <span class="text-xs text-muted" :class="length > {{ \App\Support\WhatsAppFormatter::MAX_LENGTH }} && 'font-medium text-danger'">
                             <span x-text="length.toLocaleString()"></span> / {{ number_format(\App\Support\WhatsAppFormatter::MAX_LENGTH) }}
                         </span>
+                        @endif
                     </div>
                     <div @class(['overflow-hidden rounded-xl border bg-white transition focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10',
                         'border-danger' => $errors->has('form.message'), 'border-line' => ! $errors->has('form.message')])>

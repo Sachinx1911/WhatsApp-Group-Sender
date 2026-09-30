@@ -31,6 +31,28 @@ window.formatWhatsApp = (text) => {
     return html.replace(/\n/g, '<br>');
 };
 
+// Settings → Appearance: apply at once, without a reload.
+window.addEventListener('appearance-changed', (event) => {
+    const detail = Array.isArray(event.detail) ? event.detail[0] : event.detail;
+    const root = document.documentElement;
+    root.classList.toggle('compact-tables', !!detail.compactTables);
+    root.classList.toggle('sidebar-collapsed', !!detail.sidebarCollapsed);
+    try {
+        localStorage.setItem('sidebar-collapsed', detail.sidebarCollapsed ? '1' : '0');
+    } catch (e) {}
+});
+
+// Desktop notifications (Settings → Notifications). Shown only when the browser allowed it.
+window.addEventListener('desktop-notify', (event) => {
+    const detail = Array.isArray(event.detail) ? event.detail[0] : event.detail;
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const notification = new Notification(detail.title, { body: detail.body ?? '', tag: `education-hub-${detail.id}` });
+    notification.onclick = () => {
+        window.focus();
+        if (detail.url) window.location = detail.url;
+    };
+});
+
 // Character count as a person sees it (an emoji counts once). Matches WhatsAppFormatter::length().
 window.countCharacters = (text) => {
     if (!text) return 0;

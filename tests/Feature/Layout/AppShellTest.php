@@ -37,20 +37,17 @@ class AppShellTest extends TestCase
         $this->assertSame(1, substr_count($response->getContent(), 'aria-current="page"'));
     }
 
-    public function test_placeholder_screens_require_login_and_name_their_phase(): void
+    public function test_every_screen_requires_login_and_opens_when_signed_in(): void
     {
         foreach (Navigation::items() as $item) {
-            if ($item['route'] === 'dashboard') {
-                continue;
-            }
-
             $this->get(route($item['route']))->assertRedirect('/login');
         }
 
-        $this->actingAs(User::factory()->create())
-            ->get(route('settings.index'))
-            ->assertOk()
-            ->assertSee('Settings is coming in Phase 12');
+        $this->actingAs(User::factory()->create());
+
+        foreach (Navigation::items() as $item) {
+            $this->get(route($item['route']))->assertOk()->assertSee($item['label']);
+        }
     }
 
     public function test_failed_messages_badge_shows_open_failures(): void

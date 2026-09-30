@@ -65,6 +65,15 @@ return [
             'replace_placeholders' => true,
         ],
 
+        // Sending activity (docs/MASTER_PROMPT.md §35). Never logs passwords or session data.
+        'whatsapp' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/whatsapp.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => 30,
+            'replace_placeholders' => true,
+        ],
+
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),

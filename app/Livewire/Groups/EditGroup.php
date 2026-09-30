@@ -21,7 +21,7 @@ class EditGroup extends Component
     {
         $this->form->reset();
         $this->form->resetValidation();
-        $this->form->category_id = Category::ordered()->value('id');
+        $this->form->category_id = Category::default()?->id;
 
         $this->dispatch('open-modal', self::MODAL);
     }
