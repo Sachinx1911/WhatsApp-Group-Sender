@@ -1,4 +1,5 @@
 import './bootstrap';
+import datetimePicker from './datetime-picker';
 
 // Modal/drawer events carry the name as a string ($dispatch('open-modal', 'x')),
 // an array (Livewire positional params) or an object ({ name: 'x' }).
@@ -139,6 +140,9 @@ document.addEventListener('alpine:init', () => {
             });
         },
     }));
+
+    // Scheduling: Date + Time fields with calendar and slot popovers.
+    Alpine.data('datetimePicker', datetimePicker);
 
     // Dashboard "Today's Sending Activity" chart. ApexCharts is loaded on demand.
     Alpine.data('activityChart', (data) => ({

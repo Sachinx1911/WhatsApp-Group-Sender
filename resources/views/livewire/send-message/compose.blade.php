@@ -266,9 +266,8 @@
                     </div>
                     @if ($form->when === 'later')
                         <div class="mt-2.5">
-                            <label for="scheduled-for" class="mb-1.5 block text-xs text-muted">Date and time</label>
-                            <input wire:model="form.scheduledFor" id="scheduled-for" type="datetime-local" min="{{ now()->addMinutes(5)->format('Y-m-d\TH:i') }}" step="60"
-                                class="w-full rounded-xl border border-line px-3.5 py-2 text-sm outline-none focus:border-primary focus:ring-4 focus:ring-primary/20">
+                            <p class="mb-1.5 text-xs text-muted">Choose a day and time in the future you want the message to go out.</p>
+                            <x-ui.datetime-picker model="form.scheduledFor" />
                             @error('form.scheduledFor') <p class="mt-1.5 text-xs text-danger">{{ $message }}</p> @enderror
                             <p class="mt-1.5 text-xs text-muted">The app (start.bat) and WhatsApp must be running at that time. If the computer is off, it is sent as soon as the app starts again.</p>
                         </div>

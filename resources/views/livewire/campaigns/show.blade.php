@@ -38,18 +38,25 @@
                     <p class="mt-0.5">The app (start.bat) and WhatsApp must be running then. If the computer is off, it is sent as soon as the app starts again.</p>
                 </div>
             </div>
-            <div class="mt-3 flex flex-wrap items-end gap-2 border-t border-blue-200/70 pt-3">
-                <div>
-                    <label for="new-time" class="mb-1 block text-xs">Change the time</label>
-                    <input wire:model="newTime" id="new-time" type="datetime-local" min="{{ now()->addMinutes(5)->format('Y-m-d\TH:i') }}" step="60"
-                        class="rounded-xl border border-blue-200 bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-primary focus:ring-4 focus:ring-primary/20">
+            <div class="mt-3 grid gap-3 border-t border-blue-200/70 pt-3 md:grid-cols-[minmax(0,320px)_1fr]">
+                <div x-data="{ editing: false }">
+                    <button type="button" x-show="!editing" x-on:click="editing = true" class="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-[13px] font-medium text-ink transition hover:border-primary">
+                        <x-lucide-calendar-check class="size-4 text-primary" /> Change the time
+                    </button>
+                    <div x-show="editing" x-cloak class="space-y-2">
+                        <x-ui.datetime-picker model="newTime" class="text-ink" />
+                        @error('newTime') <p class="text-xs text-danger">{{ $message }}</p> @enderror
+                        <div class="flex gap-2">
+                            <x-ui.button size="sm" icon="calendar-check" wire:click="reschedule" wire:loading.attr="disabled" wire:target="reschedule">Reschedule</x-ui.button>
+                            <x-ui.button variant="secondary" size="sm" x-on:click="editing = false">Keep current time</x-ui.button>
+                        </div>
+                    </div>
                 </div>
-                <x-ui.button variant="secondary" size="sm" icon="calendar-check" wire:click="reschedule" wire:loading.attr="disabled" wire:target="reschedule">Reschedule</x-ui.button>
-                <span class="flex-1"></span>
-                <x-ui.button size="sm" icon="send" wire:click="sendNow" wire:confirm="Send this message to {{ $campaign->total_groups }} groups now instead of waiting?" wire:loading.attr="disabled" wire:target="sendNow">Send now</x-ui.button>
-                <x-ui.button variant="danger" size="sm" icon="circle-stop" x-on:click="$dispatch('open-modal', '{{ \App\Livewire\Campaigns\Show::CANCEL_MODAL }}')">Cancel</x-ui.button>
+                <div class="flex flex-wrap items-start justify-end gap-2">
+                    <x-ui.button size="sm" icon="send" wire:click="sendNow" wire:confirm="Send this message to {{ $campaign->total_groups }} groups now instead of waiting?" wire:loading.attr="disabled" wire:target="sendNow">Send now</x-ui.button>
+                    <x-ui.button variant="danger" size="sm" icon="circle-stop" x-on:click="$dispatch('open-modal', '{{ \App\Livewire\Campaigns\Show::CANCEL_MODAL }}')">Cancel</x-ui.button>
+                </div>
             </div>
-            @error('newTime') <p class="mt-1.5 text-xs text-danger">{{ $message }}</p> @enderror
         </div>
     @elseif ($campaign->status === CampaignStatus::Queued)
         <div class="mb-5 flex items-start gap-3 rounded-card border border-blue-200 bg-primary-soft px-4 py-3 text-sm text-blue-800">
