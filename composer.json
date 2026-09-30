@@ -39,13 +39,15 @@
             "@php artisan key:generate",
             "@php artisan migrate --force",
             "npm install",
-            "npm run build"
+            "npm run build",
+            "@php -r \"file_exists('playwright/.env') || copy('playwright/.env.example', 'playwright/.env');\"",
+            "npm install --prefix playwright"
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",
             "docker compose up -d --wait",
             "@php artisan campaigns:recover",
-            "npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74\" \"php artisan serve --host=127.0.0.1 --port=8010\" \"php artisan queue:listen --queue=whatsapp,default --tries=1 --timeout=0\" \"npm run dev\" --names=server,queue,vite --kill-others"
+            "npx concurrently -c \"#93c5fd,#c4b5fd,#fdba74,#86efac\" \"php artisan serve --host=127.0.0.1 --port=8010\" \"php artisan queue:listen --queue=whatsapp,default --tries=1 --timeout=0\" \"npm run dev\" \"node playwright/worker.js\" --names=server,queue,vite,whatsapp --kill-others"
         ],
         "test": [
             "@php artisan config:clear --ansi",

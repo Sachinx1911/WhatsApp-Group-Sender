@@ -1,0 +1,17 @@
+{
+  "name": "education-hub-whatsapp-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "description": "Local WhatsApp Web automation worker (docs/MASTER_PROMPT.md §32). Long-running Node process paired with the Laravel app; never deployed anywhere else.",
+  "main": "worker.js",
+  "scripts": {
+    "start": "node worker.js",
+    "postinstall": "playwright install chromium",
+    "check-status": "node scripts/check-status.js"
+  },
+  "dependencies": {
+    "playwright": "^1.48.0",
+    "dotenv": "^16.4.5"
+  }
+}

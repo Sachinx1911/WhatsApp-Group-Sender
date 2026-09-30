@@ -6,6 +6,10 @@ use App\Enums\GroupStatus;
 use App\Livewire\Concerns\WithTable;
 use App\Models\Category;
 use App\Models\Group;
+use App\Services\WhatsApp\PlaywrightWhatsAppService;
+use App\Services\WhatsApp\WhatsAppServiceInterface;
+use App\Services\WhatsApp\WhatsAppSessionManager;
+use App\Services\WhatsApp\WorkerUnavailableException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
@@ -186,6 +190,69 @@ class Index extends Component
             $this->dispatch('toast', type: 'warning',
                 message: $blocked->count().' '.str('group')->plural($blocked->count()).' not deleted because a campaign is still sending to '.($blocked->count() === 1 ? 'it' : 'them').'.');
         }
+    }
+
+    #[Computed]
+    public function canSyncFromWhatsApp(): bool
+    {
+        return config('educationhub.whatsapp.driver') === 'playwright'
+            && app(WhatsAppSessionManager::class)->session()->isConnected();
+    }
+
+    /**
+     * Import chats from the linked WhatsApp account (docs/MASTER_PROMPT.md §14, "Sync from
+     * WhatsApp"). The worker can only list chat titles, not tell groups apart from
+     * one-to-one contacts, so new chats come in as Inactive: review and activate the
+     * real groups before they can receive a campaign.
+     */
+    public function syncFromWhatsApp(WhatsAppSessionManager $sessions): void
+    {
+        $whatsapp = app(WhatsAppServiceInterface::class);
+
+        if (! $whatsapp instanceof PlaywrightWhatsAppService) {
+            $this->dispatch('toast', type: 'error', message: 'Sync from WhatsApp needs the Playwright worker (WHATSAPP_DRIVER=playwright).');
+
+            return;
+        }
+
+        if (! $sessions->session()->isConnected()) {
+            $this->dispatch('toast', type: 'error', message: 'Connect WhatsApp first from Settings → WhatsApp Connection.');
+
+            return;
+        }
+
+        try {
+            $chatNames = $whatsapp->listGroupNames();
+        } catch (WorkerUnavailableException $e) {
+            $this->dispatch('toast', type: 'error', message: $e->getMessage());
+
+            return;
+        }
+
+        $existingNames = Group::pluck('name');
+        $newNames = collect($chatNames)->map(fn ($n) => trim((string) $n))->filter()->unique()->diff($existingNames)->values();
+
+        if ($newNames->isEmpty()) {
+            $this->dispatch('toast', type: 'info', message: 'No new chats found. Everything WhatsApp shows is already in Group Manager.');
+
+            return;
+        }
+
+        $defaultCategoryId = config('educationhub.groups.default_category_id') ?? Category::ordered()->value('id');
+
+        DB::transaction(function () use ($newNames, $defaultCategoryId) {
+            foreach ($newNames as $name) {
+                Group::create([
+                    'name' => $name,
+                    'category_id' => $defaultCategoryId,
+                    'status' => GroupStatus::Inactive,
+                ]);
+            }
+        });
+
+        unset($this->stats);
+        $this->dispatch('toast', type: 'success', message: $newNames->count().' new '.str('chat')->plural($newNames->count())
+            .' added as inactive. This list may include personal chats too — review and activate only real groups before sending.');
     }
 
     private function finishBulk(string $message): void

@@ -6,6 +6,7 @@ use App\Enums\SendStatus;
 use App\Models\CampaignGroup;
 use App\Services\Campaigns\CampaignRunner;
 use App\Services\WhatsApp\FakeWhatsAppService;
+use App\Services\WhatsApp\PlaywrightWhatsAppService;
 use App\Services\WhatsApp\WhatsAppServiceInterface;
 use App\Support\Navigation;
 use App\Support\Settings;
@@ -24,7 +25,11 @@ class AppServiceProvider extends ServiceProvider
         // One instance per process, so a worker keeps its browser session between jobs.
         $this->app->singleton(WhatsAppServiceInterface::class, fn () => match (config('educationhub.whatsapp.driver')) {
             'fake' => new FakeWhatsAppService,
-            default => throw new InvalidArgumentException('Unknown WHATSAPP_DRIVER "'.config('educationhub.whatsapp.driver').'". Use "fake" until the Playwright worker is installed.'),
+            'playwright' => new PlaywrightWhatsAppService(
+                config('educationhub.whatsapp.worker.url'),
+                (string) config('educationhub.whatsapp.worker.token'),
+            ),
+            default => throw new InvalidArgumentException('Unknown WHATSAPP_DRIVER "'.config('educationhub.whatsapp.driver').'". Use "fake" or "playwright".'),
         });
 
         $this->app->singleton(CampaignRunner::class);

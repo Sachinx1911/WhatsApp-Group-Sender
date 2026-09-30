@@ -22,3 +22,6 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Never commit the WhatsApp Web browser profile (session cookies).
+/storage/app/whatsapp-session

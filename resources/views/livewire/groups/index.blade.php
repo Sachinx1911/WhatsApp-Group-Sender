@@ -3,7 +3,15 @@
         <x-ui.button variant="secondary" icon="tags" x-on:click="$dispatch('open-modal', '{{ \App\Livewire\Categories\Manager::MODAL }}')">Categories</x-ui.button>
         <x-ui.button variant="secondary" icon="upload" x-on:click="$dispatch('import-groups')">Import Groups</x-ui.button>
         <x-ui.button variant="secondary" icon="download" :href="route('groups.export', array_filter($this->filters()))">Export</x-ui.button>
-        <x-ui.button variant="secondary" icon="refresh-cw" disabled title="Available once WhatsApp is connected (Phase 14)">Sync from WhatsApp</x-ui.button>
+        <x-ui.button
+            variant="secondary"
+            icon="refresh-cw"
+            wire:click="syncFromWhatsApp"
+            wire:loading.attr="disabled"
+            wire:target="syncFromWhatsApp"
+            :disabled="! $this->canSyncFromWhatsApp"
+            :title="$this->canSyncFromWhatsApp ? 'Import new chats from the linked WhatsApp account' : 'Connect WhatsApp (Settings → WhatsApp Connection) with the Playwright worker running to enable this'"
+        >Sync from WhatsApp</x-ui.button>
         <x-ui.button icon="plus" x-on:click="$dispatch('create-group')">Add Group</x-ui.button>
     </x-ui.page-header>
 
