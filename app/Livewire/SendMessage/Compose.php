@@ -246,6 +246,7 @@ class Compose extends Component
     public function startSending(CreateCampaign $create): void
     {
         $this->form->validateForSending();
+        $scheduledAt = $this->form->scheduledAt();
 
         $campaign = $create->handle(
             message: $this->form->finalMessage(),
@@ -253,6 +254,7 @@ class Compose extends Component
             groupIds: $this->form->groups,
             template: $this->form->template_id ? MessageTemplate::find($this->form->template_id) : null,
             user: auth()->user(),
+            scheduledAt: $scheduledAt,
         );
 
         if (config('educationhub.groups.remember_selection')) {
@@ -287,9 +289,11 @@ class Compose extends Component
     {
         // Lets the page drop its "unsaved message" warning before it navigates away.
         $this->dispatch('campaign-started');
-        session()->flash('toast', ['type' => 'success', 'message' => $campaign->status === CampaignStatus::Queued
-            ? 'Campaign created. It starts after the campaign that is sending now.'
-            : 'Sending started']);
+        session()->flash('toast', ['type' => 'success', 'message' => match ($campaign->status) {
+            CampaignStatus::Scheduled => 'Scheduled for '.$campaign->scheduled_at->format('D, d M \a\t g:i A').'. Keep the app running at that time.',
+            CampaignStatus::Queued => 'Campaign created. It starts after the campaign that is sending now.',
+            default => 'Sending started',
+        }]);
 
         // Settings → Sending → Show progress during sending.
         config('educationhub.sending.show_progress', true)

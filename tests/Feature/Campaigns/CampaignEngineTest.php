@@ -6,6 +6,7 @@ use App\Actions\Campaigns\CreateCampaign;
 use App\Enums\CampaignStatus;
 use App\Enums\SendErrorType;
 use App\Enums\SendStatus;
+use App\Jobs\ReleaseScheduledCampaignJob;
 use App\Jobs\SendToGroupJob;
 use App\Jobs\StartCampaignJob;
 use App\Models\AppNotification;
@@ -19,6 +20,7 @@ use App\Models\SendLog;
 use App\Services\Campaigns\CampaignRunner;
 use App\Services\WhatsApp\FakeWhatsAppService;
 use App\Services\WhatsApp\WhatsAppServiceInterface;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Queue;
@@ -312,6 +314,75 @@ class CampaignEngineTest extends TestCase
         $second = $this->create($this->makeGroups(1));
 
         $this->assertSame(CampaignStatus::Queued, $second->status);
+    }
+
+    private function schedule(Collection $groups, CarbonInterface $at): Campaign
+    {
+        return app(CreateCampaign::class)->handle(message: 'Scheduled', attachment: null, groupIds: $groups->pluck('id')->all(), scheduledAt: $at);
+    }
+
+    public function test_a_scheduled_campaign_waits_and_does_not_block_others(): void
+    {
+        Queue::fake();
+        $at = now()->addHours(2);
+        $scheduled = $this->schedule($this->makeGroups(1), $at);
+
+        $this->assertSame(CampaignStatus::Scheduled, $scheduled->status);
+        $this->assertTrue($scheduled->scheduled_at->equalTo($at->toImmutable()->startOfMinute()));
+        Queue::assertPushed(ReleaseScheduledCampaignJob::class, fn ($job) => $job->campaignId === $scheduled->id);
+
+        // Another campaign created now sends immediately: the scheduled one is not "in line".
+        $now = $this->create($this->makeGroups(1));
+        $this->assertSame(CampaignStatus::Sending, $now->status);
+        $this->runJob($now->campaignGroups()->value('id'));
+        $this->assertSame(CampaignStatus::Completed, $now->fresh()->status);
+        $this->assertSame(CampaignStatus::Scheduled, $scheduled->fresh()->status);
+
+        // Its time comes: the job queues it and, the sender being idle, it starts.
+        app()->call([new ReleaseScheduledCampaignJob($scheduled->id, $scheduled->scheduled_at->toIso8601String()), 'handle']);
+        $this->assertSame(CampaignStatus::Sending, $scheduled->fresh()->status);
+        $this->assertFalse(AppNotification::where('title', 'Scheduled message sent late')->exists());
+    }
+
+    public function test_a_stale_release_job_does_nothing_after_a_reschedule(): void
+    {
+        Queue::fake();
+        $scheduled = $this->schedule($this->makeGroups(1), now()->addHour());
+        $original = $scheduled->scheduled_at->toIso8601String();
+
+        app(CampaignRunner::class)->reschedule($scheduled, now()->addHours(5));
+        Queue::assertPushed(ReleaseScheduledCampaignJob::class, 2);
+
+        app()->call([new ReleaseScheduledCampaignJob($scheduled->id, $original), 'handle']);
+        $this->assertSame(CampaignStatus::Scheduled, $scheduled->fresh()->status);
+
+        app()->call([new ReleaseScheduledCampaignJob($scheduled->id, $scheduled->fresh()->scheduled_at->toIso8601String()), 'handle']);
+        $this->assertSame(CampaignStatus::Sending, $scheduled->fresh()->status);
+    }
+
+    public function test_recover_releases_a_scheduled_campaign_whose_time_passed_while_the_app_was_off(): void
+    {
+        Queue::fake();
+        $scheduled = $this->schedule($this->makeGroups(1), now()->addHour());
+        Campaign::whereKey($scheduled->id)->update(['scheduled_at' => now()->subHours(3)]);
+
+        $this->artisan('campaigns:recover')->assertSuccessful();
+
+        $this->assertSame(CampaignStatus::Sending, $scheduled->fresh()->status);
+        $this->assertTrue(AppNotification::where('title', 'Scheduled message sent late')->exists());
+    }
+
+    public function test_a_scheduled_campaign_can_be_cancelled_and_sent_early(): void
+    {
+        Queue::fake();
+        $cancelled = $this->schedule($this->makeGroups(1), now()->addHour());
+        app(CampaignRunner::class)->cancel($cancelled);
+        $this->assertSame(CampaignStatus::Cancelled, $cancelled->fresh()->status);
+        $this->assertSame(SendStatus::Cancelled, $cancelled->campaignGroups()->sole()->status);
+
+        $early = $this->schedule($this->makeGroups(1), now()->addHour());
+        app(CampaignRunner::class)->release($early);
+        $this->assertSame(CampaignStatus::Sending, $early->fresh()->status);
     }
 
     public function test_cancel_stops_pending_groups_and_starts_the_next_campaign(): void

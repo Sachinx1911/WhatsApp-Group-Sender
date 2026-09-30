@@ -6,6 +6,7 @@ use App\Enums\GroupStatus;
 use App\Models\Group;
 use App\Models\Media;
 use App\Support\WhatsAppFormatter;
+use Carbon\CarbonImmutable;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Form;
@@ -28,6 +29,36 @@ class SendForm extends Form
 
     /** Number typed by the admin to confirm a large selection. */
     public string $confirmCount = '';
+
+    /** 'now' or 'later' (Review & Send). */
+    public string $when = 'now';
+
+    /** Local date-time chosen for 'later', as the <input type="datetime-local"> gives it: "2026-10-02T07:00". */
+    public string $scheduledFor = '';
+
+    /** The chosen time as a date in the app timezone, or null for "send now". @throws ValidationException */
+    public function scheduledAt(): ?CarbonImmutable
+    {
+        if ($this->when !== 'later') {
+            return null;
+        }
+
+        $at = $this->scheduledFor !== '' ? CarbonImmutable::createFromFormat('Y-m-d\TH:i', $this->scheduledFor) : null;
+
+        if (! $at) {
+            throw ValidationException::withMessages(['form.scheduledFor' => 'Choose the date and time to send.']);
+        }
+
+        if ($at->lte(now()->addMinute())) {
+            throw ValidationException::withMessages(['form.scheduledFor' => 'Choose a time at least a few minutes from now.']);
+        }
+
+        if ($at->gt(now()->addDays(60))) {
+            throw ValidationException::withMessages(['form.scheduledFor' => 'Schedule at most 60 days ahead.']);
+        }
+
+        return $at->startOfMinute();
+    }
 
     public function messageRules(): array
     {

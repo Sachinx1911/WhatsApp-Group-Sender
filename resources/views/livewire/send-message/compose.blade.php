@@ -254,6 +254,26 @@
                         @endforeach
                     </div>
                 </div>
+                <div class="rounded-xl border border-line p-3">
+                    <p class="mb-2 text-[13px] font-medium">When to send</p>
+                    <div class="grid grid-cols-2 gap-1.5 rounded-lg bg-canvas p-1 text-[13px]">
+                        <label class="cursor-pointer rounded-md px-3 py-1.5 text-center font-medium transition {{ $form->when === 'now' ? 'bg-white text-ink shadow-sm' : 'text-muted hover:text-ink' }}">
+                            <input type="radio" wire:model.live="form.when" value="now" class="sr-only"> Send now
+                        </label>
+                        <label class="cursor-pointer rounded-md px-3 py-1.5 text-center font-medium transition {{ $form->when === 'later' ? 'bg-white text-ink shadow-sm' : 'text-muted hover:text-ink' }}">
+                            <input type="radio" wire:model.live="form.when" value="later" class="sr-only"> Schedule
+                        </label>
+                    </div>
+                    @if ($form->when === 'later')
+                        <div class="mt-2.5">
+                            <label for="scheduled-for" class="mb-1.5 block text-xs text-muted">Date and time</label>
+                            <input wire:model="form.scheduledFor" id="scheduled-for" type="datetime-local" min="{{ now()->addMinutes(5)->format('Y-m-d\TH:i') }}" step="60"
+                                class="w-full rounded-xl border border-line px-3.5 py-2 text-sm outline-none focus:border-primary focus:ring-4 focus:ring-primary/20">
+                            @error('form.scheduledFor') <p class="mt-1.5 text-xs text-danger">{{ $message }}</p> @enderror
+                            <p class="mt-1.5 text-xs text-muted">The app (start.bat) and WhatsApp must be running at that time. If the computer is off, it is sent as soon as the app starts again.</p>
+                        </div>
+                    @endif
+                </div>
                 <p class="flex gap-2 rounded-xl bg-canvas px-3 py-2.5 text-xs text-muted">
                     <x-lucide-info class="mt-px size-3.5 shrink-0" />
                     Groups are sent one at a time with a {{ config('educationhub.sending.delay_seconds') }}-second pause. Keep this computer on and WhatsApp connected until it finishes.
@@ -272,9 +292,9 @@
         </div>
         <x-slot:footer>
             <x-ui.button variant="secondary" icon="arrow-left" x-on:click="open = false">Back</x-ui.button>
-            <x-ui.button icon="send" wire:click="startSending" wire:loading.attr="disabled" wire:target="startSending">
-                <span wire:loading.remove wire:target="startSending">Start Sending</span>
-                <span wire:loading wire:target="startSending">Starting...</span>
+            <x-ui.button :icon="$form->when === 'later' ? 'calendar-clock' : 'send'" wire:click="startSending" wire:loading.attr="disabled" wire:target="startSending">
+                <span wire:loading.remove wire:target="startSending">{{ $form->when === 'later' ? 'Schedule' : 'Start Sending' }}</span>
+                <span wire:loading wire:target="startSending">{{ $form->when === 'later' ? 'Scheduling...' : 'Starting...' }}</span>
             </x-ui.button>
         </x-slot:footer>
     </x-ui.modal>

@@ -2,9 +2,13 @@
 
 namespace Tests\Feature\SendMessage;
 
+use App\Enums\CampaignStatus;
+use App\Enums\SendStatus;
+use App\Jobs\ReleaseScheduledCampaignJob;
 use App\Livewire\SendMessage\Compose;
 use App\Livewire\Templates\Picker as TemplatePicker;
 use App\Models\Campaign;
+use App\Models\CampaignGroup;
 use App\Models\Category;
 use App\Models\Group;
 use App\Models\Media;
@@ -13,6 +17,7 @@ use App\Models\User;
 use App\Support\SendEstimate;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -235,6 +240,33 @@ class ComposeTest extends TestCase
             ->set('form.groups', [(string) $group->id])
             ->call('startSending')
             ->assertHasNoErrors();
+    }
+
+    public function test_a_message_can_be_scheduled_for_later(): void
+    {
+        Queue::fake();
+        $group = Group::factory()->for($this->mpsc)->create();
+        $at = now()->addDay()->setTime(7, 0);
+
+        Livewire::test(Compose::class)
+            ->set('form.message', 'उद्याच्या चालू घडामोडी')
+            ->set('form.groups', [(string) $group->id])
+            ->set('form.when', 'later')
+            ->call('startSending')
+            ->assertHasErrors('form.scheduledFor') // no time chosen
+            ->set('form.scheduledFor', now()->subHour()->format('Y-m-d\TH:i'))
+            ->call('startSending')
+            ->assertHasErrors('form.scheduledFor') // in the past
+            ->set('form.scheduledFor', $at->format('Y-m-d\TH:i'))
+            ->call('startSending')
+            ->assertHasNoErrors();
+
+        $campaign = Campaign::sole();
+        $this->assertSame(CampaignStatus::Scheduled, $campaign->status);
+        $this->assertTrue($campaign->scheduled_at->equalTo($at->startOfMinute()));
+        $this->assertStringEndsWith($at->format('d M'), $campaign->title);
+        $this->assertSame(0, CampaignGroup::where('status', '!=', SendStatus::Pending)->count()); // nothing sent yet
+        Queue::assertPushed(ReleaseScheduledCampaignJob::class, fn ($job) => $job->campaignId === $campaign->id && $job->delay !== null);
     }
 
     public function test_send_test_uses_the_test_group(): void

@@ -86,6 +86,29 @@
         </x-ui.card>
     </div>
 
+    {{-- Scheduled messages --}}
+    @if ($this->scheduledCampaigns->isNotEmpty())
+        <x-ui.card title="Scheduled Messages" subtitle="Waiting for their time. Keep the app running." :padding="false" class="mt-6">
+            <ul class="divide-y divide-line">
+                @foreach ($this->scheduledCampaigns as $campaign)
+                    <li wire:key="scheduled-{{ $campaign->id }}">
+                        <a href="{{ route('campaigns.show', $campaign) }}" class="flex items-center gap-3 px-5 py-3 text-sm transition hover:bg-canvas/60">
+                            <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-primary-soft text-primary"><x-lucide-calendar-clock class="size-4" /></span>
+                            <span class="min-w-0 flex-1">
+                                <span class="block truncate font-medium">{{ $campaign->title }}</span>
+                                <span class="block text-xs text-muted">{{ $campaign->total_groups }} {{ Str::plural('group', $campaign->total_groups) }}{{ $campaign->attachment_name ? ' · '.$campaign->attachment_name : '' }}</span>
+                            </span>
+                            <span class="shrink-0 text-right">
+                                <span class="block font-medium">{{ $campaign->scheduled_at->format('D, d M') }}</span>
+                                <span class="block text-xs text-muted">{{ $campaign->scheduled_at->format('g:i A') }} · {{ $campaign->scheduled_at->diffForHumans() }}</span>
+                            </span>
+                        </a>
+                    </li>
+                @endforeach
+            </ul>
+        </x-ui.card>
+    @endif
+
     {{-- Recent Campaigns --}}
     <x-ui.card title="Recent Campaigns" subtitle="Latest messages sent to your groups" :padding="false" class="mt-6">
         <x-slot:actions>

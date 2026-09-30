@@ -143,6 +143,7 @@ class Index extends Component
             CampaignStatus::PartiallyFailed->value => CampaignStatus::PartiallyFailed->label(),
             CampaignStatus::Failed->value => CampaignStatus::Failed->label(),
             'in_progress' => 'In Progress',
+            CampaignStatus::Scheduled->value => CampaignStatus::Scheduled->label(),
             CampaignStatus::Cancelled->value => CampaignStatus::Cancelled->label(),
         ];
     }

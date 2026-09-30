@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 #[Fillable([
     'title', 'message', 'attachment_id', 'attachment_name', 'is_test',
     'total_groups', 'sent_count', 'failed_count', 'pending_count', 'skipped_count',
-    'status', 'created_by', 'started_at', 'paused_at', 'completed_at',
+    'status', 'scheduled_at', 'created_by', 'started_at', 'paused_at', 'completed_at',
 ])]
 class Campaign extends Model
 {
@@ -34,6 +34,7 @@ class Campaign extends Model
             'failed_count' => 'integer',
             'pending_count' => 'integer',
             'skipped_count' => 'integer',
+            'scheduled_at' => 'datetime',
             'started_at' => 'datetime',
             'paused_at' => 'datetime',
             'completed_at' => 'datetime',

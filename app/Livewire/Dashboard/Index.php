@@ -81,6 +81,13 @@ class Index extends Component
         return Campaign::latest()->limit(self::RECENT_CAMPAIGNS)->get();
     }
 
+    /** Messages waiting for their scheduled time, soonest first. */
+    #[Computed]
+    public function scheduledCampaigns()
+    {
+        return Campaign::where('status', CampaignStatus::Scheduled)->orderBy('scheduled_at')->limit(10)->get();
+    }
+
     /** @return Collection<int, int> hour => count */
     private function hoursOf(Collection $timestamps): Collection
     {

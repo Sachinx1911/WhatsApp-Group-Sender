@@ -97,8 +97,13 @@
                             <tr wire:key="history-{{ $campaign->id }}" class="cursor-pointer transition hover:bg-canvas/60"
                                 x-data x-on:click="if (! $event.target.closest('a, button')) window.location = @js(route('campaigns.show', $campaign))">
                                 <td class="whitespace-nowrap py-3 pl-5 pr-3">
-                                    <span class="block font-medium">{{ $campaign->created_at->format('d M Y') }}</span>
-                                    <span class="block text-xs text-muted">{{ $campaign->created_at->format('g:i A') }}</span>
+                                    @if ($campaign->status === \App\Enums\CampaignStatus::Scheduled && $campaign->scheduled_at)
+                                        <span class="flex items-center gap-1 font-medium text-primary"><x-lucide-calendar-clock class="size-3.5" /> {{ $campaign->scheduled_at->format('d M Y') }}</span>
+                                        <span class="block text-xs text-muted">Sends at {{ $campaign->scheduled_at->format('g:i A') }}</span>
+                                    @else
+                                        <span class="block font-medium">{{ $campaign->created_at->format('d M Y') }}</span>
+                                        <span class="block text-xs text-muted">{{ $campaign->created_at->format('g:i A') }}</span>
+                                    @endif
                                 </td>
                                 <td class="w-[22%] max-w-0 px-3 py-3">
                                     <span class="flex items-center gap-2">

@@ -5,12 +5,14 @@ namespace App\Services\Campaigns;
 use App\Enums\CampaignStatus;
 use App\Enums\SendErrorType;
 use App\Enums\SendStatus;
+use App\Jobs\ReleaseScheduledCampaignJob;
 use App\Jobs\SendToGroupJob;
 use App\Jobs\StartCampaignJob;
 use App\Models\AppNotification;
 use App\Models\Campaign;
 use App\Models\CampaignGroup;
 use App\Models\SendLog;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -88,11 +90,59 @@ class CampaignRunner
         $this->startNextIfIdle();
     }
 
+    /**
+     * A scheduled campaign's time has come: queue it. Called by the delayed job, or by
+     * recover() at start-up for one whose time passed while the PC was off.
+     */
+    public function release(Campaign $campaign): void
+    {
+        $released = Campaign::whereKey($campaign->id)
+            ->where('status', CampaignStatus::Scheduled)
+            ->update(['status' => CampaignStatus::Queued]);
+
+        if (! $released) {
+            return;
+        }
+
+        $campaign->refresh();
+        $late = $campaign->scheduled_at && now()->gt($campaign->scheduled_at->addMinutes(ReleaseScheduledCampaignJob::LATE_AFTER_MINUTES));
+        Log::channel('whatsapp')->info('Scheduled campaign released', ['campaign' => $campaign->id, 'scheduled_for' => $campaign->scheduled_at?->toDateTimeString(), 'late' => $late]);
+
+        if ($late) {
+            AppNotification::create([
+                'type' => 'campaign_completed',
+                'title' => 'Scheduled message sent late',
+                'body' => "“{$campaign->title}” was scheduled for {$campaign->scheduled_at->format('d M, g:i A')} but the app was not running then. It is being sent now.",
+                'url' => route('campaigns.show', $campaign, absolute: false),
+            ]);
+        }
+
+        $this->startNextIfIdle();
+    }
+
+    /** Move a scheduled campaign to a new time. A fresh delayed job is queued; the old one finds a mismatch and exits. */
+    public function reschedule(Campaign $campaign, CarbonInterface $at): void
+    {
+        $at = $at->toImmutable()->startOfMinute();
+
+        $moved = Campaign::whereKey($campaign->id)
+            ->where('status', CampaignStatus::Scheduled)
+            ->update(['scheduled_at' => $at]);
+
+        if (! $moved) {
+            return;
+        }
+
+        $campaign->refresh();
+        Log::channel('whatsapp')->info('Campaign rescheduled', ['campaign' => $campaign->id, 'scheduled_for' => $at->toDateTimeString()]);
+        ReleaseScheduledCampaignJob::dispatch($campaign->id, $campaign->scheduled_at->toIso8601String())->delay($at);
+    }
+
     public function cancel(Campaign $campaign): void
     {
         $cancelled = DB::transaction(function () use ($campaign) {
             $cancelled = Campaign::whereKey($campaign->id)
-                ->whereIn('status', [CampaignStatus::Queued, CampaignStatus::Sending, CampaignStatus::Paused])
+                ->whereIn('status', [CampaignStatus::Scheduled, CampaignStatus::Queued, CampaignStatus::Sending, CampaignStatus::Paused])
                 ->update(['status' => CampaignStatus::Cancelled, 'completed_at' => now(), 'paused_at' => null]);
 
             if ($cancelled) {
@@ -239,6 +289,14 @@ class CampaignRunner
             ]);
             Log::channel('whatsapp')->warning('Unconfirmed send after restart', ['campaign' => $row->campaign_id, 'group' => $row->group_name]);
         }
+
+        // Scheduled campaigns whose time passed while the app was off. The delayed job
+        // would release them too once the queue runs; doing it here covers a cleared
+        // jobs table and makes the start-up summary honest.
+        Campaign::where('status', CampaignStatus::Scheduled)
+            ->where('scheduled_at', '<=', now())
+            ->orderBy('scheduled_at')
+            ->each(fn (Campaign $campaign) => $this->release($campaign));
 
         $sending = Campaign::where('status', CampaignStatus::Sending)->get();
 

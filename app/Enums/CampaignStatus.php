@@ -5,6 +5,7 @@ namespace App\Enums;
 enum CampaignStatus: string
 {
     case Draft = 'draft';
+    case Scheduled = 'scheduled';
     case Queued = 'queued';
     case Sending = 'sending';
     case Paused = 'paused';
@@ -17,6 +18,7 @@ enum CampaignStatus: string
     {
         return match ($this) {
             self::Draft => 'Draft',
+            self::Scheduled => 'Scheduled',
             self::Queued => 'Queued',
             self::Sending => 'Sending',
             self::Paused => 'Paused',
@@ -32,7 +34,7 @@ enum CampaignStatus: string
     {
         return match ($this) {
             self::Completed => 'success',
-            self::Sending, self::Queued => 'primary',
+            self::Sending, self::Queued, self::Scheduled => 'primary',
             self::Paused, self::PartiallyFailed => 'warning',
             self::Failed => 'danger',
             self::Draft, self::Cancelled => 'muted',

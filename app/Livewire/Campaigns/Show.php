@@ -10,6 +10,7 @@ use App\Models\Campaign;
 use App\Models\SendLog;
 use App\Services\Campaigns\CampaignRunner;
 use App\Support\SendEstimate;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -53,10 +54,50 @@ class Show extends Component
 
     public function cancel(CampaignRunner $runner): void
     {
+        $wasScheduled = $this->campaign->status === CampaignStatus::Scheduled;
         $runner->cancel($this->campaign);
 
         $this->dispatch('close-modal', self::CANCEL_MODAL);
-        $this->dispatch('toast', type: 'success', message: 'Campaign cancelled. Groups that were not reached will not receive it.');
+        $this->dispatch('toast', type: 'success', message: $wasScheduled
+            ? 'Scheduled message cancelled. Nothing was sent.'
+            : 'Campaign cancelled. Groups that were not reached will not receive it.');
+    }
+
+    /** New date-time for a scheduled campaign, as <input type="datetime-local"> gives it. */
+    public string $newTime = '';
+
+    /** Send a scheduled campaign right away instead of waiting. */
+    public function sendNow(CampaignRunner $runner): void
+    {
+        $runner->release($this->campaign);
+        $this->campaign->refresh();
+
+        $this->dispatch('toast', type: 'success', message: $this->campaign->status === CampaignStatus::Queued
+            ? 'Queued. It starts after the campaign that is sending now.'
+            : 'Sending started');
+    }
+
+    public function reschedule(CampaignRunner $runner): void
+    {
+        $at = $this->newTime !== '' ? CarbonImmutable::createFromFormat('Y-m-d\TH:i', $this->newTime) : null;
+
+        if (! $at || $at->lte(now()->addMinute())) {
+            $this->addError('newTime', 'Choose a time at least a few minutes from now.');
+
+            return;
+        }
+
+        if ($at->gt(now()->addDays(60))) {
+            $this->addError('newTime', 'Schedule at most 60 days ahead.');
+
+            return;
+        }
+
+        $runner->reschedule($this->campaign, $at);
+        $this->campaign->refresh();
+        $this->reset('newTime');
+
+        $this->dispatch('toast', type: 'success', message: 'Rescheduled for '.$this->campaign->scheduled_at->format('D, d M \a\t g:i A').'.');
     }
 
     /** Send every failed group of this campaign again (it waits its turn if another campaign is sending). */

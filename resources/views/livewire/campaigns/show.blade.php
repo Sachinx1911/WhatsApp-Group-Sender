@@ -4,31 +4,54 @@
 
     $counts = $this->counts;
     $active = $campaign->isActive();
+    $scheduled = $campaign->status === CampaignStatus::Scheduled;
     $processed = $counts['sent'] + $counts['failed'] + $counts['skipped'];
     $percent = $campaign->total_groups ? round($processed / $campaign->total_groups * 100, 1) : 0;
     $remaining = $counts['pending'] + $counts['processing'];
 @endphp
 
-<div @if ($active) wire:poll.2s.visible @endif>
+<div @if ($active || $scheduled) wire:poll.{{ $scheduled ? '30s' : '2s' }}.visible @endif>
     <a href="{{ route('history.index') }}" class="mb-3 inline-flex items-center gap-1.5 text-[13px] text-muted hover:text-primary">
         <x-lucide-arrow-left class="size-4" /> Back to Send History
     </a>
 
-    <x-ui.page-header :title="$active ? 'Sending Message' : 'Campaign Details'" :subtitle="$campaign->title">
+    <x-ui.page-header :title="$active ? 'Sending Message' : ($scheduled ? 'Scheduled Message' : 'Campaign Details')" :subtitle="$campaign->title">
         <div class="flex items-center gap-2">
             @if ($campaign->is_test) <x-ui.badge color="accent">Test</x-ui.badge> @endif
             <x-ui.status-badge :status="$campaign->status" />
-            @if (! $active && $counts['failed'])
+            @if (! $active && ! $scheduled && $counts['failed'])
                 <x-ui.button size="sm" icon="refresh-cw" wire:click="retryFailed" wire:loading.attr="disabled" wire:target="retryFailed">Retry failed ({{ $counts['failed'] }})</x-ui.button>
             @endif
-            @unless ($active)
+            @unless ($active || $scheduled)
                 <x-ui.button variant="secondary" size="sm" icon="copy" :href="route('send.create', ['campaign' => $campaign->id])">Send again</x-ui.button>
             @endunless
         </div>
     </x-ui.page-header>
 
     {{-- Banners --}}
-    @if ($campaign->status === CampaignStatus::Queued)
+    @if ($scheduled)
+        <div class="mb-5 rounded-card border border-blue-200 bg-primary-soft px-4 py-3 text-sm text-blue-800">
+            <div class="flex items-start gap-3">
+                <x-lucide-calendar-clock class="mt-0.5 size-5 shrink-0" />
+                <div class="flex-1">
+                    <p class="font-medium">Scheduled for {{ $campaign->scheduled_at->format('l, d M Y \a\t g:i A') }} <span class="font-normal">({{ $campaign->scheduled_at->diffForHumans() }})</span></p>
+                    <p class="mt-0.5">The app (start.bat) and WhatsApp must be running then. If the computer is off, it is sent as soon as the app starts again.</p>
+                </div>
+            </div>
+            <div class="mt-3 flex flex-wrap items-end gap-2 border-t border-blue-200/70 pt-3">
+                <div>
+                    <label for="new-time" class="mb-1 block text-xs">Change the time</label>
+                    <input wire:model="newTime" id="new-time" type="datetime-local" min="{{ now()->addMinutes(5)->format('Y-m-d\TH:i') }}" step="60"
+                        class="rounded-xl border border-blue-200 bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-primary focus:ring-4 focus:ring-primary/20">
+                </div>
+                <x-ui.button variant="secondary" size="sm" icon="calendar-check" wire:click="reschedule" wire:loading.attr="disabled" wire:target="reschedule">Reschedule</x-ui.button>
+                <span class="flex-1"></span>
+                <x-ui.button size="sm" icon="send" wire:click="sendNow" wire:confirm="Send this message to {{ $campaign->total_groups }} groups now instead of waiting?" wire:loading.attr="disabled" wire:target="sendNow">Send now</x-ui.button>
+                <x-ui.button variant="danger" size="sm" icon="circle-stop" x-on:click="$dispatch('open-modal', '{{ \App\Livewire\Campaigns\Show::CANCEL_MODAL }}')">Cancel</x-ui.button>
+            </div>
+            @error('newTime') <p class="mt-1.5 text-xs text-danger">{{ $message }}</p> @enderror
+        </div>
+    @elseif ($campaign->status === CampaignStatus::Queued)
         <div class="mb-5 flex items-start gap-3 rounded-card border border-blue-200 bg-primary-soft px-4 py-3 text-sm text-blue-800">
             <x-lucide-clock-3 class="mt-0.5 size-5 shrink-0" />
             <p>
@@ -223,7 +246,7 @@
     </div>
 
     {{-- Cancel confirmation (only while the campaign can still be cancelled) --}}
-    @if ($active)
+    @if ($active || $scheduled)
     <x-ui.modal :name="\App\Livewire\Campaigns\Show::CANCEL_MODAL" title="Cancel this campaign?">
         <div class="flex gap-4">
             <span class="grid size-10 shrink-0 place-items-center rounded-full bg-danger-soft text-danger"><x-lucide-circle-stop class="size-5" /></span>
