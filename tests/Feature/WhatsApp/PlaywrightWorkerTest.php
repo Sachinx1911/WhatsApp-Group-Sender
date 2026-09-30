@@ -2,10 +2,13 @@
 
 namespace Tests\Feature\WhatsApp;
 
+use App\Enums\CampaignStatus;
 use App\Enums\GroupStatus;
 use App\Enums\SendErrorType;
 use App\Enums\WhatsAppConnectionStatus;
 use App\Livewire\Groups\Index as GroupIndex;
+use App\Livewire\Settings\Index as SettingsIndex;
+use App\Models\Campaign;
 use App\Models\Category;
 use App\Models\Group;
 use App\Models\Media;
@@ -395,6 +398,66 @@ class PlaywrightWorkerTest extends TestCase
 
         // The import is the point of the sync; a missing count must not undo it.
         $this->assertSame(1, Group::where('name', 'Group 1')->count());
+    }
+
+    public function test_the_settings_button_updates_every_group_member_count(): void
+    {
+        config(['educationhub.whatsapp.driver' => 'playwright']);
+
+        $one = Group::factory()->create(['name' => 'Group 1', 'member_count' => null]);
+        $two = Group::factory()->create(['name' => 'Group 2', 'member_count' => 5]);
+
+        Http::fake([self::URL.'/member-counts' => Http::response(['success' => true, 'counts' => [
+            'Group 1' => 30,
+            'Group 2' => 41,
+        ]])]);
+
+        $this->app->instance(WhatsAppServiceInterface::class, $this->service());
+        $this->connectedSession();
+
+        Livewire::actingAs(User::factory()->create())
+            ->test(SettingsIndex::class)
+            ->call('updateMemberCounts')
+            ->assertDispatched('toast', type: 'success');
+
+        $this->assertSame(30, $one->refresh()->member_count);
+        $this->assertSame(41, $two->refresh()->member_count);
+    }
+
+    /** One browser and one WhatsApp session: reading counts mid-campaign would fight the send. */
+    public function test_the_settings_button_refuses_while_a_campaign_is_sending(): void
+    {
+        config(['educationhub.whatsapp.driver' => 'playwright']);
+        Group::factory()->create(['name' => 'Group 1']);
+        Campaign::factory()->create(['status' => CampaignStatus::Sending]);
+
+        Http::fake();
+
+        $this->app->instance(WhatsAppServiceInterface::class, $this->service());
+        $this->connectedSession();
+
+        Livewire::actingAs(User::factory()->create())
+            ->test(SettingsIndex::class)
+            ->call('updateMemberCounts')
+            ->assertDispatched('toast', type: 'error');
+
+        Http::assertNothingSent();
+    }
+
+    public function test_the_settings_button_refuses_when_whatsapp_is_disconnected(): void
+    {
+        config(['educationhub.whatsapp.driver' => 'playwright']);
+        Group::factory()->create(['name' => 'Group 1']);
+
+        Http::fake();
+        $this->app->instance(WhatsAppServiceInterface::class, $this->service());
+
+        Livewire::actingAs(User::factory()->create())
+            ->test(SettingsIndex::class)
+            ->call('updateMemberCounts')
+            ->assertDispatched('toast', type: 'error');
+
+        Http::assertNothingSent();
     }
 
     public function test_sync_is_refused_when_whatsapp_is_not_connected(): void

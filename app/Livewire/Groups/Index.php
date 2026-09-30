@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Groups;
 
+use App\Actions\Groups\RefreshMemberCounts;
 use App\Enums\GroupStatus;
 use App\Livewire\Concerns\WithTable;
 use App\Models\Category;
@@ -319,23 +320,11 @@ class Index extends Component
         }
 
         try {
-            $counts = $whatsapp->memberCounts($names->all());
+            return app(RefreshMemberCounts::class)->handle($names)['updated'];
         } catch (WorkerUnavailableException) {
             // The import itself succeeded; a missing count is not worth failing it for.
             return 0;
         }
-
-        $updated = 0;
-
-        foreach ($counts as $name => $count) {
-            if (! is_int($count)) {
-                continue;
-            }
-
-            $updated += Group::where('name', $name)->update(['member_count' => $count]);
-        }
-
-        return $updated;
     }
 
     private function finishBulk(string $message): void

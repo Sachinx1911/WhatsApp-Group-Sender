@@ -251,9 +251,35 @@
                         <x-ui.toggle wire:model="s.sync_fetch_member_counts" label="Read member counts from WhatsApp" description="Fills the Members column. WhatsApp only shows the count inside each group, so sync opens every group: about 4 seconds each." />
                     </div>
 
-                    <div class="mt-5 flex items-start gap-2.5 rounded-xl bg-canvas px-4 py-3.5 text-xs text-muted">
+                    <div class="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3.5">
+                        <div class="min-w-0">
+                            <p class="text-sm font-medium">Update member counts now</p>
+                            <p class="text-xs text-muted">
+                                Reads the current member count for all {{ $this->groupCount }} {{ str('group')->plural($this->groupCount) }} without waiting for a sync.
+                                @if ($this->groupCount > 0)
+                                    Takes about {{ \App\Actions\Groups\RefreshMemberCounts::estimatedSeconds($this->groupCount) < 60
+                                        ? \App\Actions\Groups\RefreshMemberCounts::estimatedSeconds($this->groupCount).' seconds'
+                                        : ceil(\App\Actions\Groups\RefreshMemberCounts::estimatedSeconds($this->groupCount) / 60).' minutes' }}. Keep this page open.
+                                @endif
+                            </p>
+                        </div>
+                        <x-ui.button
+                            variant="secondary"
+                            size="sm"
+                            icon="refresh-cw"
+                            wire:click="updateMemberCounts"
+                            wire:loading.attr="disabled"
+                            wire:target="updateMemberCounts"
+                            :disabled="$this->groupCount === 0"
+                        >
+                            <span wire:loading.remove wire:target="updateMemberCounts">Update now</span>
+                            <span wire:loading wire:target="updateMemberCounts">Reading WhatsApp…</span>
+                        </x-ui.button>
+                    </div>
+
+                    <div class="mt-3 flex items-start gap-2.5 rounded-xl bg-canvas px-4 py-3.5 text-xs text-muted">
                         <x-lucide-info class="mt-px h-4 w-4 shrink-0" />
-                        <p>Sync never removes or renames a group, and never touches one that already exists. “Groups only” needs the <b>Groups</b> filter to be showing above your WhatsApp chat list; if it is not there, the sync stops and tells you instead of importing personal chats.</p>
+                        <p>Sync never removes or renames a group, and never touches one that already exists. “Groups only” needs the <b>Groups</b> filter to be showing above your WhatsApp chat list; if it is not there, the sync stops and tells you instead of importing personal chats. A group WhatsApp shows no count for keeps its existing number rather than dropping to zero.</p>
                     </div>
                     @break
 

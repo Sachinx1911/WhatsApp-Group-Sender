@@ -5,6 +5,7 @@ namespace App\Livewire\Settings;
 use App\Actions\Data\ClearTemporaryFiles;
 use App\Actions\Data\ExportAllData;
 use App\Actions\Data\ResetApplication;
+use App\Actions\Groups\RefreshMemberCounts;
 use App\Enums\CampaignStatus;
 use App\Models\Campaign;
 use App\Models\Category;
@@ -271,6 +272,58 @@ class Index extends Component
         }
 
         $this->dispatch('toast', type: 'success', message: 'Status refreshed: '.$session->status->label());
+    }
+
+    // ---- WhatsApp sync -------------------------------------------------------
+
+    /**
+     * Read every group's member count from WhatsApp now, without waiting for a sync.
+     *
+     * Runs in the request rather than on the queue on purpose: the queue's single worker
+     * is the sending lane, and a long count refresh there would hold up a campaign.
+     */
+    public function updateMemberCounts(RefreshMemberCounts $refresh): void
+    {
+        if (! $this->session->isConnected()) {
+            $this->dispatch('toast', type: 'error', message: 'Connect WhatsApp first, then update member counts.');
+
+            return;
+        }
+
+        if (Campaign::where('status', CampaignStatus::Sending)->exists()) {
+            // One browser, one WhatsApp Web session: reading counts now would fight with
+            // the campaign for it, and the worker would refuse anyway.
+            $this->dispatch('toast', type: 'error', message: 'A campaign is sending right now. Wait for it to finish, then update member counts.');
+
+            return;
+        }
+
+        try {
+            $result = $refresh->handle();
+        } catch (WorkerUnavailableException $e) {
+            $this->dispatch('toast', type: 'error', message: $e->getMessage());
+
+            return;
+        }
+
+        unset($this->groupCount);
+
+        if ($result['checked'] === 0) {
+            $this->dispatch('toast', type: 'info', message: 'There are no groups to update yet.');
+
+            return;
+        }
+
+        $this->dispatch('toast', type: $result['updated'] > 0 ? 'success' : 'warning', message: $result['updated'].' of '
+            .$result['checked'].' '.str('group')->plural($result['checked']).' updated.'
+            .($result['missing'] > 0 ? ' '.$result['missing'].' not found in WhatsApp, left unchanged.' : ''));
+    }
+
+    /** Groups on record, for the member-count button's time estimate. */
+    #[Computed]
+    public function groupCount(): int
+    {
+        return Group::count();
     }
 
     /** Health of the two background programs, for the WhatsApp section. */
