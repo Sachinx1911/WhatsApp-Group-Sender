@@ -86,6 +86,22 @@ return [
         'retry_backoff' => [30, 120],
         // A group left "processing" this long (e.g. the PC restarted mid-send) is marked "Delivery unconfirmed".
         'stuck_after_minutes' => 5,
+        /*
+         | "Sync from WhatsApp" (Group Manager). WhatsApp's chat list gives no way to tell
+         | a group from a personal chat, so groups-only relies on WhatsApp's own Groups
+         | filter; when that filter is not on screen the sync says so instead of guessing.
+         */
+        'sync' => [
+            // groups = only group chats. all = every chat, including personal ones.
+            'scope' => 'groups',
+            // Skip chats named after a phone number: those are always personal contacts.
+            'skip_phone_numbers' => true,
+            // Status given to newly imported chats. Inactive keeps them out of campaigns
+            // until an admin has reviewed them.
+            'status' => 'inactive',
+            // Category for imported chats. null = the default category for new groups.
+            'category_id' => null,
+        ],
         'fake' => [
             // Simulated send time so progress can be watched during development.
             'delay_ms' => (int) env('WHATSAPP_FAKE_DELAY_MS', 1500),

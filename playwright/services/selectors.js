@@ -58,6 +58,20 @@ function chatRows(page) {
   return page.locator('#pane-side div[role="row"]');
 }
 
+/**
+ * The chat-list filter tabs ("All", "Favourites", "Groups"). Chat rows carry no marker
+ * that separates a group from a one-to-one chat, so WhatsApp's own Groups tab is the only
+ * dependable way to tell them apart.
+ */
+function chatFilterTab(page, label) {
+  return page.getByRole('tab', { name: new RegExp(`^${label}$`, 'i') }).first();
+}
+
+/** The scrollable chat-list pane. The list is virtualised: only visible rows exist. */
+function chatListScroller(page) {
+  return page.locator('#pane-side').first();
+}
+
 /** The chat-name span inside every chat row (excludes message previews). */
 function chatTitleSpans(page) {
   return page.locator('#pane-side div[role="row"] div[data-testid="cell-frame-title"] span[title]');
@@ -166,6 +180,8 @@ function logoutConfirmButton(page) {
 module.exports = {
   appShell,
   chatRows,
+  chatFilterTab,
+  chatListScroller,
   chatTitleSpans,
   qrCode,
   chatListPane,

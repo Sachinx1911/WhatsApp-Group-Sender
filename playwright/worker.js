@@ -119,9 +119,14 @@ const routes = {
       return sendJson(res, 200, { success: false, error_type: 'WHATSAPP_DISCONNECTED', error_message: 'WhatsApp is not connected.' });
     }
 
+    // ?scope=groups (default) reads WhatsApp's Groups tab; ?scope=all reads every chat.
+    const scope = new URL(req.url, `http://${HOST}:${PORT}`).searchParams.get('scope') === 'all' ? 'all' : 'groups';
+
     try {
-      const groups = await wa.listChats(session.page);
-      sendJson(res, 200, { success: true, groups });
+      log(`listing chats (scope: ${scope})`);
+      const groups = await wa.listChats(session.page, scope);
+      log(`listed ${groups.length} chat(s)`);
+      sendJson(res, 200, { success: true, scope, groups });
     } catch (error) {
       const errorType = error.errorType || 'UNKNOWN_ERROR';
       sendJson(res, 200, { success: false, error_type: errorType, error_message: error.message });

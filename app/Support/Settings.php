@@ -55,6 +55,11 @@ class Settings
             'educationhub.groups.last_selection' => ['array'],
             'educationhub.groups.last_selection.*' => ['integer'],
             'educationhub.groups.search_mode' => ['required', Rule::in(['contains', 'starts_with'])],
+            // WhatsApp sync
+            'educationhub.whatsapp.sync.scope' => ['required', Rule::in(['groups', 'all'])],
+            'educationhub.whatsapp.sync.skip_phone_numbers' => ['boolean'],
+            'educationhub.whatsapp.sync.status' => ['required', Rule::in(['inactive', 'active'])],
+            'educationhub.whatsapp.sync.category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')],
             // Notifications
             'educationhub.notifications.desktop' => ['boolean'],
             'educationhub.notifications.campaign_completed' => ['boolean'],

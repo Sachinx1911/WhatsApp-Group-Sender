@@ -169,7 +169,7 @@ class PlaywrightWorkerTest extends TestCase
 
         Group::factory()->create(['name' => 'Already Here']);
 
-        Http::fake([self::URL.'/groups' => Http::response([
+        Http::fake([self::URL.'/groups*' => Http::response([
             'success' => true,
             'groups' => ['Already Here', 'Group 1', 'Group 2'],
         ])]);
@@ -202,7 +202,7 @@ class PlaywrightWorkerTest extends TestCase
         $category = Category::factory()->create();
         config(['educationhub.groups.default_category_id' => $category->id]);
 
-        Http::fake([self::URL.'/groups' => Http::response([
+        Http::fake([self::URL.'/groups*' => Http::response([
             'success' => true,
             // WhatsApp reporting the same chat twice under different casing.
             'groups' => ['Bajaj Direct Offers', 'Bajaj direct offers', 'BAJAJ DIRECT OFFERS'],
@@ -226,7 +226,7 @@ class PlaywrightWorkerTest extends TestCase
 
         Group::factory()->create(['name' => 'Group 1']);
 
-        Http::fake([self::URL.'/groups' => Http::response(['success' => true, 'groups' => ['Group 1']])]);
+        Http::fake([self::URL.'/groups*' => Http::response(['success' => true, 'groups' => ['Group 1']])]);
 
         $this->app->instance(WhatsAppServiceInterface::class, $this->service());
         $this->connectedSession();
@@ -237,6 +237,60 @@ class PlaywrightWorkerTest extends TestCase
             ->assertDispatched('toast', type: 'info');
 
         $this->assertSame(1, Group::count());
+    }
+
+    public function test_sync_settings_control_scope_status_and_category(): void
+    {
+        config(['educationhub.whatsapp.driver' => 'playwright']);
+
+        $importCategory = Category::factory()->create(['name' => 'Imported']);
+        $otherCategory = Category::factory()->create(['name' => 'Default']);
+
+        config([
+            'educationhub.groups.default_category_id' => $otherCategory->id,
+            'educationhub.whatsapp.sync.scope' => 'all',
+            'educationhub.whatsapp.sync.status' => 'active',
+            'educationhub.whatsapp.sync.category_id' => $importCategory->id,
+        ]);
+
+        Http::fake([self::URL.'/groups*' => Http::response(['success' => true, 'groups' => ['A Chat']])]);
+
+        $this->app->instance(WhatsAppServiceInterface::class, $this->service());
+        $this->connectedSession();
+
+        Livewire::actingAs(User::factory()->create())
+            ->test(GroupIndex::class)
+            ->call('syncFromWhatsApp');
+
+        Http::assertSent(fn (Request $r) => str_contains($r->url(), 'scope=all'));
+
+        $group = Group::where('name', 'A Chat')->firstOrFail();
+        $this->assertSame(GroupStatus::Active, $group->status);
+        $this->assertSame($importCategory->id, $group->category_id, 'the sync category wins over the group default');
+    }
+
+    public function test_sync_skips_chats_named_as_a_phone_number(): void
+    {
+        config(['educationhub.whatsapp.driver' => 'playwright']);
+        $category = Category::factory()->create();
+        config([
+            'educationhub.groups.default_category_id' => $category->id,
+            'educationhub.whatsapp.sync.skip_phone_numbers' => true,
+        ]);
+
+        Http::fake([self::URL.'/groups*' => Http::response([
+            'success' => true,
+            'groups' => ['+91 84483 11302', '9876543210', 'MPSC Batch 01'],
+        ])]);
+
+        $this->app->instance(WhatsAppServiceInterface::class, $this->service());
+        $this->connectedSession();
+
+        Livewire::actingAs(User::factory()->create())
+            ->test(GroupIndex::class)
+            ->call('syncFromWhatsApp');
+
+        $this->assertSame(['MPSC Batch 01'], Group::pluck('name')->all());
     }
 
     public function test_sync_is_refused_when_whatsapp_is_not_connected(): void

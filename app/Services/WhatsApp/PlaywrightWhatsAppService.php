@@ -71,10 +71,15 @@ class PlaywrightWhatsAppService implements WhatsAppServiceInterface
         return SendResult::fromArray($response->json() ?? []);
     }
 
-    /** List chat names currently visible to the linked WhatsApp account ("Sync from WhatsApp"). */
-    public function listGroupNames(): array
+    /**
+     * Chat names from the linked WhatsApp account, for "Sync from WhatsApp".
+     *
+     * $scope "groups" reads WhatsApp's own Groups filter so personal chats are left out;
+     * "all" reads every chat. Reading a long list means scrolling it, so allow more time.
+     */
+    public function listGroupNames(string $scope = 'groups'): array
     {
-        $response = $this->safeRequest(fn () => $this->request(timeout: 20)->get('/groups'));
+        $response = $this->safeRequest(fn () => $this->request(timeout: 120)->get('/groups', ['scope' => $scope]));
 
         if ($response->json('success') !== true) {
             throw WorkerUnavailableException::make($response->json('error_message'));

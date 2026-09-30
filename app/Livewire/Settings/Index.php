@@ -33,6 +33,7 @@ class Index extends Component
     /** section => [label, icon, description] */
     public const SECTIONS = [
         'whatsapp' => ['WhatsApp Connection', 'message-circle', 'Connection status of this computer’s WhatsApp Web session'],
+        'sync' => ['WhatsApp Sync', 'refresh-cw', 'What “Sync from WhatsApp” imports into Group Manager'],
         'sending' => ['Sending Settings', 'send', 'Pace and safety limits for sending'],
         'message' => ['Message Settings', 'message-square-text', 'Footer, link previews and the composer'],
         'media' => ['Media & File Settings', 'image', 'Upload limits, storage and images'],
@@ -44,6 +45,10 @@ class Index extends Component
 
     /** form field => [config key, section] */
     public const FIELDS = [
+        'sync_scope' => ['educationhub.whatsapp.sync.scope', 'sync'],
+        'sync_skip_phone_numbers' => ['educationhub.whatsapp.sync.skip_phone_numbers', 'sync'],
+        'sync_status' => ['educationhub.whatsapp.sync.status', 'sync'],
+        'sync_category_id' => ['educationhub.whatsapp.sync.category_id', 'sync'],
         'delay_seconds' => ['educationhub.sending.delay_seconds', 'sending'],
         'daily_limit' => ['educationhub.sending.daily_limit', 'sending'],
         'max_groups_per_campaign' => ['educationhub.sending.max_groups_per_campaign', 'sending'],

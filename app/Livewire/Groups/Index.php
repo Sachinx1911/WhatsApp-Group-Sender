@@ -221,8 +221,10 @@ class Index extends Component
             return;
         }
 
+        $scope = (string) config('educationhub.whatsapp.sync.scope', 'groups');
+
         try {
-            $chatNames = $whatsapp->listGroupNames();
+            $chatNames = $whatsapp->listGroupNames($scope);
         } catch (WorkerUnavailableException $e) {
             $this->dispatch('toast', type: 'error', message: $e->getMessage());
 
@@ -232,6 +234,9 @@ class Index extends Component
         $incoming = collect($chatNames)
             ->map(fn ($n) => trim((string) $n))
             ->filter()
+            // A chat named as a phone number is a personal contact, never a group.
+            ->reject(fn (string $name) => config('educationhub.whatsapp.sync.skip_phone_numbers', true)
+                && preg_match('/^\+?[\d\s\-()]{7,}$/u', $name) === 1)
             // Two chats can differ only by case and still collide in the database.
             ->unique(fn (string $name) => mb_strtolower($name))
             ->values();
@@ -252,14 +257,17 @@ class Index extends Component
             return;
         }
 
-        $defaultCategoryId = config('educationhub.groups.default_category_id') ?? Category::ordered()->value('id');
+        $categoryId = config('educationhub.whatsapp.sync.category_id')
+            ?? config('educationhub.groups.default_category_id')
+            ?? Category::ordered()->value('id');
 
-        if (! $defaultCategoryId) {
+        if (! $categoryId) {
             $this->dispatch('toast', type: 'error', message: 'Create a category first: imported chats need one.');
 
             return;
         }
 
+        $status = GroupStatus::tryFrom((string) config('educationhub.whatsapp.sync.status', 'inactive')) ?? GroupStatus::Inactive;
         $now = now();
 
         // insertOrIgnore, not create(): the collation can still consider two names equal in
@@ -267,8 +275,8 @@ class Index extends Component
         // — one odd chat name must not fail the whole sync with a 500.
         $inserted = Group::insertOrIgnore($newNames->map(fn (string $name) => [
             'name' => $name,
-            'category_id' => $defaultCategoryId,
-            'status' => GroupStatus::Inactive->value,
+            'category_id' => $categoryId,
+            'status' => $status->value,
             'created_at' => $now,
             'updated_at' => $now,
         ])->all());
@@ -281,8 +289,11 @@ class Index extends Component
             return;
         }
 
-        $this->dispatch('toast', type: 'success', message: $inserted.' new '.str('chat')->plural($inserted)
-            .' added as inactive. This list may include personal chats too — review and activate only real groups before sending.');
+        $this->dispatch('toast', type: 'success', message: $inserted.' new '.str($scope === 'groups' ? 'group' : 'chat')->plural($inserted)
+            .' imported as '.$status->label().'.'
+            .($scope === 'groups'
+                ? ''
+                : ' Personal chats can appear in this list — review before activating.'));
     }
 
     private function finishBulk(string $message): void

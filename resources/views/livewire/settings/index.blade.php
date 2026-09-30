@@ -205,6 +205,57 @@
                     </div>
                     @break
 
+                {{-- ================= WhatsApp Sync ================= --}}
+                @case('sync')
+                    <div>
+                        <p class="mb-1.5 text-[13px] font-medium">What to import</p>
+                        <div class="grid gap-2 sm:grid-cols-2">
+                            @foreach ([
+                                'groups' => ['Groups only', 'Uses WhatsApp’s own Groups filter. Personal chats are never imported.'],
+                                'all' => ['Groups and personal chats', 'Imports every chat in the list, including individual contacts.'],
+                            ] as $value => [$label, $hint])
+                                <label class="flex cursor-pointer flex-col gap-1 rounded-xl border border-line px-3.5 py-3 text-sm has-checked:border-primary has-checked:bg-primary-soft">
+                                    <span class="flex items-center gap-2.5 font-medium">
+                                        <input wire:model="s.sync_scope" type="radio" value="{{ $value }}" class="accent-primary"> {{ $label }}
+                                    </span>
+                                    <span class="pl-6 text-xs text-muted">{{ $hint }}</span>
+                                </label>
+                            @endforeach
+                        </div>
+                        @if ($err('sync_scope')) <p class="mt-1.5 text-xs text-danger">{{ $err('sync_scope') }}</p> @endif
+                    </div>
+
+                    <div class="mt-5 grid gap-5 sm:grid-cols-2">
+                        <div>
+                            <label for="s-sync-status" class="mb-1.5 block text-[13px] font-medium">Status for imported chats</label>
+                            <select wire:model="s.sync_status" id="s-sync-status" class="{{ $input }}">
+                                <option value="inactive">Inactive — review before sending (recommended)</option>
+                                <option value="active">Active — ready to send immediately</option>
+                            </select>
+                            <p class="mt-1.5 text-xs {{ $err('sync_status') ? 'text-danger' : 'text-muted' }}">{{ $err('sync_status') ?: 'Inactive groups can never be selected on Send Message.' }}</p>
+                        </div>
+                        <div>
+                            <label for="s-sync-cat" class="mb-1.5 block text-[13px] font-medium">Category for imported chats</label>
+                            <select wire:model="s.sync_category_id" id="s-sync-cat" class="{{ $input }}">
+                                <option value="">Same as the default category for new groups</option>
+                                @foreach ($this->categories as $category)
+                                    <option value="{{ $category->id }}">{{ $category->name }}</option>
+                                @endforeach
+                            </select>
+                            <p class="mt-1.5 text-xs {{ $err('sync_category_id') ? 'text-danger' : 'text-muted' }}">{{ $err('sync_category_id') ?: 'Put imported chats in their own category to find them easily.' }}</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 divide-y divide-line border-t border-line">
+                        <x-ui.toggle wire:model="s.sync_skip_phone_numbers" label="Skip chats named as a phone number" description="Chats showing a number instead of a name are personal contacts, never groups." />
+                    </div>
+
+                    <div class="mt-5 flex items-start gap-2.5 rounded-xl bg-canvas px-4 py-3.5 text-xs text-muted">
+                        <x-lucide-info class="mt-px h-4 w-4 shrink-0" />
+                        <p>Sync never removes or renames a group, and never touches one that already exists. “Groups only” needs the <b>Groups</b> filter to be showing above your WhatsApp chat list; if it is not there, the sync stops and tells you instead of importing personal chats.</p>
+                    </div>
+                    @break
+
                 {{-- ================= Groups ================= --}}
                 @case('groups')
                     <div class="grid gap-5 sm:grid-cols-2">

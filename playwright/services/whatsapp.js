@@ -293,8 +293,14 @@ async function sendToGroup(page, { group, message, attachmentPath }) {
   }
 }
 
-/** List visible chat titles in the left pane, for "Sync from WhatsApp" (best-effort). */
-async function listChats(page) {
+/**
+ * List chat titles for "Sync from WhatsApp".
+ *
+ * scope "groups" reads WhatsApp's own Groups tab, so personal chats are never imported;
+ * scope "all" reads everything. A chat row itself carries no marker distinguishing a group
+ * from a one-to-one chat, so the tab is the only dependable signal.
+ */
+async function listChats(page, scope = 'groups') {
   const pane = sel.chatListPane(page);
   const visible = await pane.isVisible().catch(() => false);
 
@@ -302,18 +308,112 @@ async function listChats(page) {
     throw new WhatsAppError('WHATSAPP_DISCONNECTED', 'WhatsApp is not connected.');
   }
 
-  // Only read the chat-name cell of each row. Every row also carries a span[title] for
-  // the last-message preview, which must never be imported as if it were a group name.
-  const titles = await sel.chatTitleSpans(page).evaluateAll((spans) => {
-    const names = spans
+  const wantsGroupsOnly = scope === 'groups';
+
+  if (wantsGroupsOnly) {
+    const tab = await findGroupsTab(page);
+
+    if (!tab) {
+      throw new WhatsAppError(
+        'BROWSER_ERROR',
+        'WhatsApp is not showing a "Groups" filter above the chat list right now, so groups cannot be told apart from personal chats. Add the Groups list in WhatsApp, or set sync to include all chats.',
+      );
+    }
+
+    await tab.click();
+    await sleep(1500);
+  }
+
+  try {
+    return await collectChatNames(page);
+  } finally {
+    // Always go back to "All": leaving the Groups filter on would narrow the chat search
+    // that every later send depends on.
+    if (wantsGroupsOnly) {
+      await sel.chatFilterTab(page, 'All').click({ timeout: 5000 }).catch(() => {});
+      await sleep(500);
+    }
+  }
+}
+
+/**
+ * Locate the "Groups" filter chip, or null when WhatsApp is not offering one.
+ *
+ * The chips above the chat list are not fixed: which ones appear varies (All, Unread,
+ * Favourites, Groups, Communities...) and the row scrolls sideways, so a chip can simply
+ * be off-screen. Scroll the row before concluding it is absent.
+ */
+async function findGroupsTab(page) {
+  const tab = sel.chatFilterTab(page, 'Groups');
+
+  if (await tab.isVisible().catch(() => false)) {
+    return tab;
+  }
+
+  const tablist = page.locator('[role="tablist"]').first();
+
+  for (let pass = 0; pass < 6; pass++) {
+    const moved = await tablist.evaluate((el) => {
+      const from = el.scrollLeft;
+      el.scrollLeft = from + 150;
+
+      return el.scrollLeft !== from;
+    }).catch(() => false);
+
+    await sleep(300);
+
+    if (await tab.isVisible().catch(() => false)) {
+      return tab;
+    }
+
+    if (!moved) {
+      break;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Read every chat name, scrolling as we go. The chat list is virtualised: only the rows on
+ * screen exist in the page, so without scrolling a long list would import just the first
+ * screenful. Stops once scrolling stops revealing new names.
+ */
+async function collectChatNames(page) {
+  const scroller = sel.chatListScroller(page);
+  const seen = new Set();
+  let idlePasses = 0;
+
+  for (let pass = 0; pass < 80 && idlePasses < 3; pass++) {
+    // Only the chat-name cell: each row also holds a span[title] for the message preview,
+    // which must never be imported as if it were a group name.
+    const batch = await sel.chatTitleSpans(page).evaluateAll((spans) => spans
       .map((span) => span.getAttribute('title'))
       .filter((name) => typeof name === 'string' && name.trim().length > 0)
-      .map((name) => name.trim());
+      .map((name) => name.trim()));
 
-    return Array.from(new Set(names));
-  });
+    const before = seen.size;
+    batch.forEach((name) => seen.add(name));
 
-  return titles;
+    idlePasses = seen.size === before ? idlePasses + 1 : 0;
+
+    const moved = await scroller.evaluate((el) => {
+      const from = el.scrollTop;
+      el.scrollTop = from + Math.max(200, el.clientHeight * 0.8);
+
+      return el.scrollTop !== from;
+    }).catch(() => false);
+
+    if (!moved) {
+      idlePasses++;
+    }
+
+    await sleep(500);
+  }
+
+  await scroller.evaluate((el) => { el.scrollTop = 0; }).catch(() => {});
+
+  return Array.from(seen);
 }
 
 /** Log out of WhatsApp Web via the in-app menu (removes the linked device). */
