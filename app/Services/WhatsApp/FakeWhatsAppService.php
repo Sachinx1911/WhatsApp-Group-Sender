@@ -43,6 +43,17 @@ class FakeWhatsAppService implements WhatsAppServiceInterface
         return $this;
     }
 
+    /** Answer "busy" (like the real worker's 409) for the next send to this group, then behave normally. */
+    public function busyOnceFor(string $groupName): static
+    {
+        $this->busy[$groupName] = true;
+
+        return $this;
+    }
+
+    /** @var array<string, bool> */
+    private array $busy = [];
+
     public function connect(): WhatsAppConnectionStatus
     {
         Cache::forever(self::STATE_KEY, true);
@@ -68,6 +79,12 @@ class FakeWhatsAppService implements WhatsAppServiceInterface
 
         if (! $this->connected()) {
             return SendResult::failed($group->name, SendErrorType::WhatsAppDisconnected);
+        }
+
+        if (! empty($this->busy[$group->name])) {
+            unset($this->busy[$group->name]);
+
+            return SendResult::busy($group->name);
         }
 
         if ($type = $this->failures[$group->name] ?? null) {

@@ -18,7 +18,14 @@ final class SendResult
         public readonly ?string $errorMessage = null,
         public readonly ?string $technicalDetails = null,
         public readonly ?CarbonImmutable $timestamp = null,
+        /** The worker refused because its browser is busy with another task; nothing was attempted. */
+        public readonly bool $workerBusy = false,
     ) {}
+
+    public static function busy(string $group): self
+    {
+        return new self(false, $group, SendErrorType::Unknown, 'The sender is busy with another task.', 'Worker busy with another send.', CarbonImmutable::now(), workerBusy: true);
+    }
 
     public static function sent(string $group): self
     {

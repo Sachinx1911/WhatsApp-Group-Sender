@@ -150,6 +150,23 @@ class CampaignEngineTest extends TestCase
         $this->assertSame(CampaignStatus::Failed, $campaign->fresh()->status);
     }
 
+    public function test_a_busy_worker_means_wait_not_a_failed_attempt(): void
+    {
+        $this->whatsapp->busyOnceFor('Busy');
+        $campaign = $this->create($this->makeGroups(1, ['Busy']));
+        $row = CampaignGroup::sole();
+
+        // Nothing was attempted: the row waits with its attempt count untouched and no failure logged.
+        $this->assertSame(SendStatus::Pending, $row->fresh()->status);
+        $this->assertSame(0, $row->fresh()->attempts);
+        $this->assertSame(CampaignStatus::Sending, $campaign->fresh()->status);
+        $this->assertFalse(SendLog::where('status', SendStatus::Failed)->exists());
+
+        $this->runJob($row->id);
+        $this->assertSame(SendStatus::Sent, $row->fresh()->status);
+        $this->assertSame(CampaignStatus::Completed, $campaign->fresh()->status);
+    }
+
     public function test_retry_succeeds_when_the_problem_goes_away(): void
     {
         $this->whatsapp->failFor('Flaky', SendErrorType::MediaUploadFailed);

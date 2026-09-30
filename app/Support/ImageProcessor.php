@@ -86,7 +86,7 @@ class ImageProcessor
         }
 
         if (@ini_set('memory_limit', (string) $needed) === false || $this->bytes((string) ini_get('memory_limit')) < $needed) {
-            throw new RuntimeException('This photo is too large to process (about '.round($width * $height / 1e6).' megapixels). Resize it below 4000×4000 and upload again.');
+            throw new ImageTooLargeException('This photo is too large to process (about '.round($width * $height / 1e6).' megapixels). Resize it below 4000×4000 and upload again.');
         }
     }
 

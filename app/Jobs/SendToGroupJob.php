@@ -95,8 +95,12 @@ class SendToGroupJob implements ShouldQueue
             // The send itself is over; only the bookkeeping failed. Leaving the row
             // "processing" would freeze the campaign, and a queue retry would not fix it
             // because the row is no longer pending. Record what we know and let it finish.
+            // A row already put back to pending (pause path) is simply re-claimed by the retry.
             report($e);
-            $this->markUnconfirmed($row, $e);
+
+            if ($row->fresh()?->status !== SendStatus::Pending) {
+                $this->markUnconfirmed($row, $e);
+            }
 
             throw $e;
         }
@@ -119,6 +123,18 @@ class SendToGroupJob implements ShouldQueue
         }
 
         $type = $result->errorType;
+
+        // The worker is busy with something else in the same browser (a sync, a member
+        // count refresh). Nothing was attempted for this group: wait, without using up
+        // an attempt, and try again shortly.
+        if ($result->workerBusy) {
+            $row->update(['status' => SendStatus::Pending, 'attempts' => max(0, $row->attempts - 1)]);
+            Log::channel('whatsapp')->info('Worker busy, waiting', ['campaign' => $campaign->id, 'group' => $row->group_name]);
+            $this->release(30);
+
+            return;
+        }
+
         $this->log($row, SendStatus::Failed, "Unable to send to {$row->group_name}", $result);
         Log::channel('whatsapp')->warning('Send failed', [
             'campaign' => $campaign->id, 'group' => $row->group_name, 'error' => $type->value, 'attempt' => $row->attempts,

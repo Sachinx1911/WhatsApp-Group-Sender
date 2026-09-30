@@ -5,6 +5,7 @@ namespace App\Actions\Media;
 use App\Enums\MediaType;
 use App\Models\Media;
 use App\Support\ImageProcessor;
+use App\Support\ImageTooLargeException;
 use App\Support\StorageUsage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
@@ -55,6 +56,10 @@ class StoreUploadedMedia
                     Storage::disk('local')->put($thumbnail, $this->images->thumbnail($absolute, $mime, (int) config('educationhub.media.thumbnail_size', 320)));
                 }
             }
+        } catch (ImageTooLargeException $e) {
+            Storage::disk('local')->delete(array_filter([$path, $thumbnail]));
+
+            throw ValidationException::withMessages([$field => $e->getMessage()]);
         } catch (Throwable $e) {
             Storage::disk('local')->delete(array_filter([$path, $thumbnail]));
             report($e);

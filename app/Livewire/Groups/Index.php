@@ -2,8 +2,10 @@
 
 namespace App\Livewire\Groups;
 
+use App\Enums\CampaignStatus;
 use App\Enums\GroupStatus;
 use App\Livewire\Concerns\WithTable;
+use App\Models\Campaign;
 use App\Models\Category;
 use App\Models\Group;
 use App\Services\WhatsApp\PlaywrightWhatsAppService;
@@ -218,6 +220,13 @@ class Index extends Component
 
         if (! $whatsapp instanceof PlaywrightWhatsAppService) {
             $this->dispatch('toast', type: 'error', message: 'Sync from WhatsApp needs the Playwright worker (WHATSAPP_DRIVER=playwright).');
+
+            return;
+        }
+
+        // Listing chats drives the same browser window a campaign is typing into.
+        if (Campaign::where('status', CampaignStatus::Sending)->exists()) {
+            $this->dispatch('toast', type: 'error', message: 'A campaign is sending right now. Pause it or wait for it to finish, then sync.');
 
             return;
         }

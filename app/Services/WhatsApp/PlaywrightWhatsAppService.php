@@ -82,7 +82,7 @@ class PlaywrightWhatsAppService implements WhatsAppServiceInterface
         $this->touch();
 
         if ($response->status() === 409) {
-            return SendResult::failed($group->name, SendErrorType::Unknown, technical: 'Worker busy with another send.');
+            return SendResult::busy($group->name);
         }
 
         if ($response->failed()) {
@@ -137,6 +137,13 @@ class PlaywrightWhatsAppService implements WhatsAppServiceInterface
 
     private function request(int $timeout = 10): PendingRequest
     {
+        // PHP kills a web request after max_execution_time (30 s by default), which is
+        // shorter than a sync or connect call to the worker. Give this request room to
+        // wait for the answer; the HTTP timeout below is still the real limit.
+        if (! app()->runningInConsole()) {
+            @set_time_limit($timeout + 30);
+        }
+
         return Http::baseUrl($this->baseUrl)
             ->withHeaders(['X-Worker-Token' => $this->token])
             ->timeout($timeout);
