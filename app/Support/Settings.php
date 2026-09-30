@@ -60,6 +60,7 @@ class Settings
             'educationhub.whatsapp.sync.skip_phone_numbers' => ['boolean'],
             'educationhub.whatsapp.sync.status' => ['required', Rule::in(['inactive', 'active'])],
             'educationhub.whatsapp.sync.category_id' => ['nullable', 'integer', Rule::exists('categories', 'id')],
+            'educationhub.whatsapp.sync.fetch_member_counts' => ['boolean'],
             // Notifications
             'educationhub.notifications.desktop' => ['boolean'],
             'educationhub.notifications.campaign_completed' => ['boolean'],

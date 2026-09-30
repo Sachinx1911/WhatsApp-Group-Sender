@@ -416,6 +416,51 @@ async function collectChatNames(page) {
   return Array.from(seen);
 }
 
+/**
+ * How many members each named group has, read from its group info panel.
+ *
+ * WhatsApp only shows the count inside that panel, so every group has to be opened in
+ * turn: this is deliberately a separate call, not part of listing, because the cost grows
+ * with the number of groups. Groups that cannot be opened or that show no count come back
+ * as null rather than guessed.
+ *
+ * @returns {Promise<Record<string, number|null>>} group name => member count
+ */
+async function memberCounts(page, names) {
+  const counts = {};
+
+  for (const name of names) {
+    counts[name] = null;
+
+    try {
+      await openGroupChat(page, name);
+      await sel.openChatHeader(page).click({ timeout: 8000 });
+      await sleep(1500);
+
+      const label = sel.groupInfoMemberCount(page);
+
+      if (await label.isVisible().catch(() => false)) {
+        const text = (await label.innerText().catch(() => '')) || '';
+        const match = text.match(/(\d+)/);
+
+        if (match) {
+          counts[name] = Number(match[1]);
+        }
+      }
+    } catch {
+      // A group that cannot be opened keeps its null: never invent a number.
+    }
+
+    // Close the info panel and the search, so the next group starts clean.
+    await page.keyboard.press('Escape').catch(() => {});
+    await sleep(400);
+    await page.keyboard.press('Escape').catch(() => {});
+    await sleep(300);
+  }
+
+  return counts;
+}
+
 /** Log out of WhatsApp Web via the in-app menu (removes the linked device). */
 async function logOut(page) {
   const menu = sel.menuButton(page);
@@ -447,5 +492,6 @@ module.exports = {
   waitForSettledState,
   sendToGroup,
   listChats,
+  memberCounts,
   logOut,
 };

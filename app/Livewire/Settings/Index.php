@@ -49,6 +49,7 @@ class Index extends Component
         'sync_skip_phone_numbers' => ['educationhub.whatsapp.sync.skip_phone_numbers', 'sync'],
         'sync_status' => ['educationhub.whatsapp.sync.status', 'sync'],
         'sync_category_id' => ['educationhub.whatsapp.sync.category_id', 'sync'],
+        'sync_fetch_member_counts' => ['educationhub.whatsapp.sync.fetch_member_counts', 'sync'],
         'delay_seconds' => ['educationhub.sending.delay_seconds', 'sending'],
         'daily_limit' => ['educationhub.sending.daily_limit', 'sending'],
         'max_groups_per_campaign' => ['educationhub.sending.max_groups_per_campaign', 'sending'],

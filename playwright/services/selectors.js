@@ -159,6 +159,19 @@ function lastMessageRow(page) {
   return page.locator(MESSAGE_ROW_SELECTOR).last();
 }
 
+/** The open chat's header; clicking it opens the group info panel. */
+function openChatHeader(page) {
+  return page.locator('#main header').first();
+}
+
+/**
+ * Member count inside the group info panel, shown as "12 members". The chat header itself
+ * only carries the group name, so the info panel is where the count has to be read.
+ */
+function groupInfoMemberCount(page) {
+  return page.getByText(/^\d+\s+members?$/i).first();
+}
+
 /** Three-dot menu button in the top-right corner of the chat list header. */
 function menuButton(page) {
   return page.locator('div[title="Menu"], button[aria-label="Menu"]').first();
@@ -190,6 +203,8 @@ module.exports = {
   chatSearchBox,
   chatListResult,
   openChatHeaderTitle,
+  openChatHeader,
+  groupInfoMemberCount,
   messageComposer,
   sendButton,
   attachButton,

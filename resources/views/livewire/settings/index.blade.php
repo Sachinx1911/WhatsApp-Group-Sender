@@ -248,6 +248,7 @@
 
                     <div class="mt-4 divide-y divide-line border-t border-line">
                         <x-ui.toggle wire:model="s.sync_skip_phone_numbers" label="Skip chats named as a phone number" description="Chats showing a number instead of a name are personal contacts, never groups." />
+                        <x-ui.toggle wire:model="s.sync_fetch_member_counts" label="Read member counts from WhatsApp" description="Fills the Members column. WhatsApp only shows the count inside each group, so sync opens every group: about 4 seconds each." />
                     </div>
 
                     <div class="mt-5 flex items-start gap-2.5 rounded-xl bg-canvas px-4 py-3.5 text-xs text-muted">

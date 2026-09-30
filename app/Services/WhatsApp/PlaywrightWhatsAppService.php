@@ -88,6 +88,32 @@ class PlaywrightWhatsAppService implements WhatsAppServiceInterface
         return $response->json('groups') ?? [];
     }
 
+    /**
+     * Member count per group name, or null for any group WhatsApp would not show one for.
+     *
+     * The worker opens each group's info panel in turn, so allow roughly four seconds per
+     * name before the request is considered lost.
+     *
+     * @param  array<int, string>  $names
+     * @return array<string, int|null>
+     */
+    public function memberCounts(array $names): array
+    {
+        if ($names === []) {
+            return [];
+        }
+
+        $timeout = min(600, 30 + count($names) * 8);
+
+        $response = $this->safeRequest(fn () => $this->request(timeout: $timeout)->post('/member-counts', ['names' => array_values($names)]));
+
+        if ($response->json('success') !== true) {
+            throw WorkerUnavailableException::make($response->json('error_message'));
+        }
+
+        return $response->json('counts') ?? [];
+    }
+
     private function request(int $timeout = 10): PendingRequest
     {
         return Http::baseUrl($this->baseUrl)

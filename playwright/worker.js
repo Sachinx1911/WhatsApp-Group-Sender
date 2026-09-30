@@ -133,6 +133,45 @@ const routes = {
     }
   },
 
+  // Member counts are read one group at a time from each group's info panel, so this is a
+  // separate call from listing: the cost grows with how many groups are asked for.
+  'POST /member-counts': async (req, res) => {
+    if (sending) {
+      return sendJson(res, 409, { success: false, error_message: 'Worker is busy sending a message.' });
+    }
+
+    if (!session.isOpen()) {
+      return sendJson(res, 200, { success: false, error_type: 'WHATSAPP_DISCONNECTED', error_message: 'WhatsApp is not connected.' });
+    }
+
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch {
+      return sendJson(res, 400, { success: false, error_message: 'Invalid JSON body.' });
+    }
+
+    const names = Array.isArray(body.names) ? body.names.filter((n) => typeof n === 'string' && n.trim()) : [];
+
+    if (names.length === 0) {
+      return sendJson(res, 422, { success: false, error_message: '"names" must be a non-empty array.' });
+    }
+
+    sending = true;
+    try {
+      log(`reading member counts for ${names.length} group(s)`);
+      const counts = await wa.memberCounts(session.page, names);
+      const found = Object.values(counts).filter((c) => c !== null).length;
+      log(`read ${found}/${names.length} member count(s)`);
+      sendJson(res, 200, { success: true, counts });
+    } catch (error) {
+      log(`member counts failed — ${error && error.message}`);
+      sendJson(res, 200, { success: false, error_type: 'BROWSER_ERROR', error_message: 'Could not read member counts.' });
+    } finally {
+      sending = false;
+    }
+  },
+
   'POST /send': async (req, res) => {
     if (sending) {
       return sendJson(res, 409, { success: false, error_type: 'UNKNOWN_ERROR', error_message: 'Worker is busy sending another message.' });
