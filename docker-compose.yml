@@ -1,0 +1,29 @@
+# Only the database runs in Docker. Laravel, the queue worker and the
+# Playwright worker run natively on Windows (Chromium must be visible for QR login).
+name: edu_hub
+
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: edu_hub_mysql
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${DB_PORT:-3308}:3306"
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-education_hub}
+      MYSQL_USER: ${DB_USERNAME:-edu_hub}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set in .env}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD must be set in .env}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - edu_hub_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  edu_hub_mysql_data:

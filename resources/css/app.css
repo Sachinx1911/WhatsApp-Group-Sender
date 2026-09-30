@@ -1,0 +1,80 @@
+/* Poppins, self-hosted (works offline). Each weight includes the Latin and Devanagari subsets. */
+@import '@fontsource/poppins/400.css';
+@import '@fontsource/poppins/500.css';
+@import '@fontsource/poppins/600.css';
+@import '@fontsource/poppins/700.css';
+
+@import 'tailwindcss';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+@source '../../app/**/*.php';
+
+/* Applied to <html> before first paint (see layouts/app.blade.php), so there is no layout flash. */
+@custom-variant collapsed (&:where(.sidebar-collapsed, .sidebar-collapsed *));
+
+/* Education Hub design tokens (see docs/MASTER_PROMPT.md §5) */
+@theme {
+    --font-sans: 'Poppins', 'Noto Sans Devanagari', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+        'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+
+    --color-primary: #2563eb;
+    --color-primary-hover: #1d4ed8;
+    --color-primary-soft: #eff6ff;
+    --color-navy: #0f172a;
+    --color-navy-soft: #1e293b;
+    --color-canvas: #f8fafc;
+    --color-success: #10b981;
+    --color-success-soft: #ecfdf5;
+    --color-danger: #ef4444;
+    --color-danger-soft: #fef2f2;
+    --color-warning: #f59e0b;
+    --color-warning-soft: #fffbeb;
+    --color-accent: #7c3aed;
+    --color-accent-soft: #f5f3ff;
+    --color-line: #e2e8f0;
+    --color-muted: #64748b;
+    --color-ink: #0f172a;
+
+    --radius-card: 14px;
+    --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.03);
+}
+
+@layer base {
+    [x-cloak] {
+        display: none !important;
+    }
+
+    body {
+        @apply bg-canvas text-ink font-sans text-sm antialiased;
+    }
+}
+
+/* WhatsApp-style message preview (components/ui/whatsapp-preview.blade.php) */
+@layer components {
+    .wa-chat {
+        background-color: #efeae2;
+        background-image: radial-gradient(rgb(0 0 0 / 0.035) 1px, transparent 1px);
+        background-size: 14px 14px;
+    }
+
+    .wa-text {
+        @apply text-[14px] leading-[1.45] break-words text-[#111b21];
+        font-family: 'Segoe UI', 'Poppins', 'Noto Sans Devanagari', 'Nirmala UI', system-ui, sans-serif;
+    }
+
+    .wa-text strong {
+        @apply font-bold;
+    }
+
+    .wa-text .wa-mono,
+    .wa-text .wa-code {
+        @apply font-mono text-[13px];
+    }
+
+    .wa-text .wa-code {
+        @apply rounded bg-black/5 px-1;
+    }
+}
