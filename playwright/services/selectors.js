@@ -99,19 +99,34 @@ function attachButton(page) {
   return page.locator('button[aria-label="Attach"], button[title="Attach"], div[title="Attach"], span[data-icon="plus-rounded"], span[data-icon="clip"]').first();
 }
 
-/** File input used for image/document attachments, once the attach menu is open. */
-function attachDocumentInput(page) {
-  return page.locator('input[type="file"][accept*="image"], input[type="file"]').first();
+/**
+ * Entries in the attach menu. These must be clicked to open WhatsApp's own file chooser.
+ *
+ * Never set files on a raw input[type=file] instead: WhatsApp keeps hidden image inputs in
+ * the page for the *group profile picture*, and writing to one of those silently replaces
+ * the group's icon rather than sending a message.
+ */
+function attachPhotosMenuItem(page) {
+  return page.getByText(/^Photos & videos$/i).first();
 }
 
-/** Caption box shown in the attachment preview dialog. */
+function attachDocumentMenuItem(page) {
+  return page.getByText(/^Document$/i).first();
+}
+
+/**
+ * Caption box on the media preview screen. The open chat's own composer is still in the
+ * page behind the preview, and typing the caption into that one would leave the text in
+ * the chat box instead of attaching it. The preview's box is the one outside <footer>;
+ * its aria-label is exactly "Type a message", while the chat composer's names the chat.
+ */
 function attachmentCaptionBox(page) {
-  return page.locator('div[aria-label="Add a caption"], div[contenteditable="true"][data-tab="10"]').first();
+  return page.locator('xpath=//div[@contenteditable="true"][@aria-label="Type a message"][not(ancestor::footer)]').first();
 }
 
-/** Confirm ("Send") button on the attachment preview dialog. */
+/** Send button on the media preview screen; its label carries a count ("Send 1 selected"). */
 function attachmentSendButton(page) {
-  return page.locator('div[role="dialog"] button[aria-label="Send"], span[data-icon="send"]').first();
+  return page.locator('xpath=//*[@role="button"][.//*[@data-testid="wds-ic-send-filled"]][not(ancestor::footer)]').first();
 }
 
 /**
@@ -135,9 +150,12 @@ function menuButton(page) {
   return page.locator('div[title="Menu"], button[aria-label="Menu"]').first();
 }
 
-/** "Log out" item inside the menu (Settings > Log out). */
+/**
+ * "Log out" item inside the menu. Anchored to the exact wording: a loose match would also
+ * hit entries like "Log out of all devices", and logging out unlinks the phone.
+ */
 function logoutMenuItem(page) {
-  return page.getByText(/log out/i).first();
+  return page.getByText(/^Log out$/i).first();
 }
 
 /** "Log out" confirmation button in the dialog WhatsApp shows before logging out. */
@@ -159,7 +177,8 @@ module.exports = {
   messageComposer,
   sendButton,
   attachButton,
-  attachDocumentInput,
+  attachPhotosMenuItem,
+  attachDocumentMenuItem,
   attachmentCaptionBox,
   attachmentSendButton,
   lastMessageRow,

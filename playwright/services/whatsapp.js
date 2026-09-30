@@ -56,10 +56,7 @@ async function waitForSettledState(page, timeoutMs = 20000) {
 
 /** Open the exact group chat by name, verifying the opened chat's title matches exactly. */
 async function openGroupChat(page, groupName) {
-  const search = sel.chatSearchBox(page);
-  await search.click({ timeout: 10000 }).catch(() => {
-    throw new WhatsAppError('BROWSER_ERROR', 'Could not open the chat search box.');
-  });
+  const search = await focusChatSearch(page);
 
   // Clear whatever a previous send left behind, then type the name. fill() covers the
   // real <input> WhatsApp uses now; the keyboard path covers a contenteditable fallback.
@@ -104,6 +101,37 @@ async function clearSearch(page) {
   await page.keyboard.press('Escape').catch(() => {});
 }
 
+/**
+ * Focus the chat-list search box, ready to type a group name.
+ *
+ * During a campaign this runs once per group, right after the previous send. Whatever the
+ * last send left on screen (an open chat, a closing attachment preview, leftover search
+ * text) can briefly cover the search box and make the click time out, which showed up as
+ * spurious BROWSER_ERROR failures that burned a retry. So: reset the UI first, wait for
+ * the box to actually be ready, and give it a second attempt before giving up.
+ */
+async function focusChatSearch(page, attempts = 2) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    await page.keyboard.press('Escape').catch(() => {});
+    await sleep(attempt * 500);
+
+    const search = sel.chatSearchBox(page);
+
+    try {
+      await search.waitFor({ state: 'visible', timeout: 8000 });
+      await search.click({ timeout: 8000 });
+
+      return search;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  throw new WhatsAppError('BROWSER_ERROR', 'Could not open the chat search box.', String(lastError));
+}
+
 /** Type text into a contenteditable composer, preserving line breaks (Shift+Enter). */
 async function typeMultiline(page, box, text) {
   await box.click();
@@ -141,38 +169,72 @@ async function sendTextMessage(page, message) {
   await confirmSent(page);
 }
 
-/** Upload an attachment with the message text as its caption. */
+const IMAGE_FILE = /\.(png|jpe?g|gif|webp)$/i;
+
+/**
+ * Upload an attachment with the message text as its caption.
+ *
+ * The file always goes through WhatsApp's own file chooser, opened by clicking the menu
+ * entry. Setting files directly on an input[type=file] is deliberately avoided: the page
+ * also holds hidden image inputs belonging to the group profile picture, and writing to
+ * one of those changes the group's icon instead of sending anything.
+ */
 async function sendAttachmentMessage(page, message, attachmentPath) {
   const attach = sel.attachButton(page);
   await attach.click({ timeout: 5000 }).catch(() => {
     throw new WhatsAppError('MEDIA_UPLOAD_FAILED', 'Could not open the attachment menu.');
   });
 
-  const fileInput = sel.attachDocumentInput(page);
+  const isImage = IMAGE_FILE.test(attachmentPath);
+  const menuItem = isImage ? sel.attachPhotosMenuItem(page) : sel.attachDocumentMenuItem(page);
 
+  let chooser;
   try {
-    await fileInput.setInputFiles(attachmentPath, { timeout: 10000 });
+    [chooser] = await Promise.all([
+      page.waitForEvent('filechooser', { timeout: 15000 }),
+      menuItem.click({ timeout: 10000 }),
+    ]);
+    await chooser.setFiles(attachmentPath);
   } catch (e) {
+    await closePreview(page);
     throw new WhatsAppError('MEDIA_UPLOAD_FAILED', 'The attachment could not be uploaded.', String(e));
   }
 
-  const caption = sel.attachmentCaptionBox(page);
-  const captionReady = await caption.isVisible({ timeout: 10000 }).catch(() => false);
+  // The preview's own send button appearing is the proof that the preview really opened.
+  const send = sel.attachmentSendButton(page);
 
-  if (!captionReady) {
+  try {
+    await send.waitFor({ state: 'visible', timeout: 20000 });
+  } catch {
+    await closePreview(page);
     throw new WhatsAppError('MEDIA_UPLOAD_FAILED', 'The attachment preview did not open.');
   }
 
   if (message) {
+    const caption = sel.attachmentCaptionBox(page);
+    const captionReady = await caption.isVisible().catch(() => false);
+
+    if (!captionReady) {
+      await closePreview(page);
+      throw new WhatsAppError('MEDIA_UPLOAD_FAILED', 'The caption box did not open, so the message text would have been lost.');
+    }
+
     await typeMultiline(page, caption, message);
   }
 
-  const send = sel.attachmentSendButton(page);
   await send.click({ timeout: 10000 }).catch(() => {
     throw new WhatsAppError('MESSAGE_SEND_FAILED', 'Could not confirm sending the attachment.');
   });
 
   await confirmSent(page);
+}
+
+/** Back out of a half-opened attachment preview so the next send starts from a clean chat. */
+async function closePreview(page) {
+  await page.keyboard.press('Escape').catch(() => {});
+  await sleep(500);
+  await page.keyboard.press('Escape').catch(() => {});
+  await sleep(300);
 }
 
 /**
