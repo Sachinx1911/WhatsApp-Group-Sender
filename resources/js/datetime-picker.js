@@ -16,6 +16,18 @@ export default function datetimePicker({ value, step = 15, maxDays = 60 }) {
         init() {
             this.readValue();
             this.$watch('value', () => this.readValue());
+
+            // Start on today so the usual case, "a bit later today", only needs a time.
+            if (!this.date && !this.time) this.date = this.todayIso();
+        },
+
+        /** The first slot still ahead of the clock today: where the time list opens and what it highlights until a time is chosen. */
+        suggestedSlot() {
+            if (this.date && this.date !== this.todayIso()) return '07:00';
+            const now = new Date();
+            const mins = Math.ceil((now.getHours() * 60 + now.getMinutes() + 3) / this.step) * this.step;
+            if (mins >= 24 * 60) return '23:45';
+            return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
         },
 
         // --- syncing with the Livewire property ---
@@ -111,7 +123,7 @@ export default function datetimePicker({ value, step = 15, maxDays = 60 }) {
             if (this.open === 'time') this.$nextTick(() => this.scrollToTime());
         },
         clear() {
-            this.date = '';
+            this.date = this.todayIso();
             this.time = '';
             this.writeValue();
             this.open = null;
@@ -151,7 +163,7 @@ export default function datetimePicker({ value, step = 15, maxDays = 60 }) {
         scrollToTime() {
             const list = this.$refs.slots;
             if (!list) return;
-            const target = list.querySelector(`[data-slot="${this.time || '07:00'}"]`);
+            const target = list.querySelector(`[data-slot="${this.time || this.suggestedSlot()}"]`);
             if (target) list.scrollTop = Math.max(0, target.offsetTop - list.clientHeight / 2 + target.offsetHeight / 2);
         },
     };

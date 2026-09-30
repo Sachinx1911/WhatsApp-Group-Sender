@@ -85,7 +85,7 @@
                     <li>
                         <button type="button" x-on:click="pickTime(slot.value)" :disabled="slot.disabled" :data-slot="slot.value"
                             class="flex w-full items-center gap-3 px-3.5 py-1.5 text-left text-[13px] transition"
-                            :class="slot.value === time ? 'bg-primary-soft font-semibold text-primary' : (slot.disabled ? 'text-slate-300 cursor-not-allowed' : 'text-ink hover:bg-canvas')">
+                            :class="slot.value === time ? 'bg-primary-soft font-semibold text-primary' : (slot.disabled ? 'text-slate-300 cursor-not-allowed' : (!time && slot.value === suggestedSlot() ? 'bg-canvas font-semibold text-ink ring-1 ring-inset ring-primary/40' : 'text-ink hover:bg-canvas'))">
                             <span class="w-12 tabular-nums" x-text="slot.hm"></span>
                             <span class="text-muted" x-text="slot.ampm"></span>
                         </button>
