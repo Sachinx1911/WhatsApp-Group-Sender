@@ -248,14 +248,13 @@
 
                     <div class="mt-4 divide-y divide-line border-t border-line">
                         <x-ui.toggle wire:model="s.sync_skip_phone_numbers" label="Skip chats named as a phone number" description="Chats showing a number instead of a name are personal contacts, never groups." />
-                        <x-ui.toggle wire:model="s.sync_fetch_member_counts" label="Read member counts from WhatsApp" description="Fills the Members column. WhatsApp only shows the count inside each group, so sync opens every group: about 4 seconds each." />
                     </div>
 
                     <div class="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line px-4 py-3.5">
                         <div class="min-w-0">
                             <p class="text-sm font-medium">Update member counts now</p>
                             <p class="text-xs text-muted">
-                                Reads the current member count for all {{ $this->groupCount }} {{ str('group')->plural($this->groupCount) }} without waiting for a sync.
+                                Reads the current member count for all {{ $this->groupCount }} {{ str('group')->plural($this->groupCount) }}. Sync never does this, so that it stays fast — this button is how the Members column gets filled.
                                 @if ($this->groupCount > 0)
                                     Takes about {{ \App\Actions\Groups\RefreshMemberCounts::estimatedSeconds($this->groupCount) < 60
                                         ? \App\Actions\Groups\RefreshMemberCounts::estimatedSeconds($this->groupCount).' seconds'

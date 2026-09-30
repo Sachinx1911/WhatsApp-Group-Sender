@@ -101,10 +101,6 @@ return [
             'status' => 'inactive',
             // Category for imported chats. null = the default category for new groups.
             'category_id' => null,
-            // Read each group's member count from WhatsApp during sync. WhatsApp only shows
-            // it inside a group's info panel, so every group must be opened: roughly four
-            // seconds each. Turn off for a fast sync and enter counts by hand or via CSV.
-            'fetch_member_counts' => true,
         ],
         'fake' => [
             // Simulated send time so progress can be watched during development.

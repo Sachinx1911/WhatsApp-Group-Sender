@@ -2,7 +2,6 @@
 
 namespace App\Livewire\Groups;
 
-use App\Actions\Groups\RefreshMemberCounts;
 use App\Enums\GroupStatus;
 use App\Livewire\Concerns\WithTable;
 use App\Models\Category;
@@ -12,7 +11,6 @@ use App\Services\WhatsApp\WhatsAppServiceInterface;
 use App\Services\WhatsApp\WhatsAppSessionManager;
 use App\Services\WhatsApp\WorkerUnavailableException;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\On;
@@ -253,14 +251,8 @@ class Index extends Component
 
         $newNames = $incoming->reject(fn (string $name) => in_array(mb_strtolower($name), $existing, true))->values();
 
-        // Nothing new to import still refreshes member counts: a sync is also how an admin
-        // brings the Members column up to date after people join or leave.
         if ($newNames->isEmpty()) {
-            $counted = $this->fillMemberCounts($whatsapp, $incoming);
-
-            $this->dispatch('toast', ...($counted > 0
-                ? ['type' => 'success', 'message' => 'No new chats. Member counts updated for '.$counted.' '.str('group')->plural($counted).'.']
-                : ['type' => 'info', 'message' => 'No new chats found. Everything WhatsApp shows is already in Group Manager.']));
+            $this->dispatch('toast', type: 'info', message: 'No new chats found. Everything WhatsApp shows is already in Group Manager.');
 
             return;
         }
@@ -291,40 +283,14 @@ class Index extends Component
 
         unset($this->stats);
 
-        $counted = $this->fillMemberCounts($whatsapp, $incoming);
-
+        // Member counts are deliberately not read here. WhatsApp only shows a count inside
+        // each group, so fetching them means opening every group and would turn a
+        // few-second sync into minutes. Settings has a button for that instead.
         $this->dispatch('toast', type: 'success', message: $inserted.' new '.str($scope === 'groups' ? 'group' : 'chat')->plural($inserted)
             .' imported as '.$status->label().'.'
-            .($counted > 0 ? ' Member counts updated for '.$counted.' '.str('group')->plural($counted).'.' : '')
             .($scope === 'groups'
                 ? ''
                 : ' Personal chats can appear in this list — review before activating.'));
-    }
-
-    /**
-     * Fill the Members column from WhatsApp for the chats this sync saw.
-     *
-     * WhatsApp only shows a member count inside each group's info panel, so the worker has
-     * to open every group: this is the slow part of a sync and can be turned off in
-     * Settings. A group WhatsApp gives no count for keeps whatever it had — an imported
-     * group with no count is left blank rather than set to zero, which would read as a
-     * real, empty group.
-     *
-     * @param  Collection<int, string>  $names
-     * @return int how many groups had a count written
-     */
-    private function fillMemberCounts(PlaywrightWhatsAppService $whatsapp, $names): int
-    {
-        if (! config('educationhub.whatsapp.sync.fetch_member_counts', true) || $names->isEmpty()) {
-            return 0;
-        }
-
-        try {
-            return app(RefreshMemberCounts::class)->handle($names)['updated'];
-        } catch (WorkerUnavailableException) {
-            // The import itself succeeded; a missing count is not worth failing it for.
-            return 0;
-        }
     }
 
     private function finishBulk(string $message): void

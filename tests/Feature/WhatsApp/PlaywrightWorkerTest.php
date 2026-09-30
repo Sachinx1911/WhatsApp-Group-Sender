@@ -296,74 +296,17 @@ class PlaywrightWorkerTest extends TestCase
         $this->assertSame(['MPSC Batch 01'], Group::pluck('name')->all());
     }
 
-    public function test_sync_fills_member_counts_and_never_invents_one(): void
+    /**
+     * Sync must stay fast. Reading counts means opening every group in WhatsApp, which
+     * would turn a few-second sync into minutes, so it belongs to the Settings button.
+     */
+    public function test_sync_never_reads_member_counts(): void
     {
         config(['educationhub.whatsapp.driver' => 'playwright']);
         $category = Category::factory()->create();
-        config([
-            'educationhub.groups.default_category_id' => $category->id,
-            'educationhub.whatsapp.sync.fetch_member_counts' => true,
-        ]);
+        config(['educationhub.groups.default_category_id' => $category->id]);
 
-        $known = Group::factory()->create(['name' => 'Group 1', 'member_count' => null]);
-
-        Http::fake([
-            self::URL.'/groups*' => Http::response(['success' => true, 'groups' => ['Group 1', 'Group 2']]),
-            self::URL.'/member-counts' => Http::response(['success' => true, 'counts' => [
-                'Group 1' => 12,
-                // WhatsApp showed no count for this one; it must stay blank, not become 0.
-                'Group 2' => null,
-            ]]),
-        ]);
-
-        $this->app->instance(WhatsAppServiceInterface::class, $this->service());
-        $this->connectedSession();
-
-        Livewire::actingAs(User::factory()->create())
-            ->test(GroupIndex::class)
-            ->call('syncFromWhatsApp');
-
-        $this->assertSame(12, $known->refresh()->member_count, 'an existing group gets its count updated');
-        $this->assertNull(Group::where('name', 'Group 2')->value('member_count'));
-    }
-
-    /** A sync with nothing new to import is still how counts get refreshed. */
-    public function test_member_counts_refresh_even_when_no_chat_is_new(): void
-    {
-        config(['educationhub.whatsapp.driver' => 'playwright']);
-        $category = Category::factory()->create();
-        config([
-            'educationhub.groups.default_category_id' => $category->id,
-            'educationhub.whatsapp.sync.fetch_member_counts' => true,
-        ]);
-
-        $group = Group::factory()->create(['name' => 'Group 1', 'member_count' => 2]);
-
-        Http::fake([
-            self::URL.'/groups*' => Http::response(['success' => true, 'groups' => ['Group 1']]),
-            self::URL.'/member-counts' => Http::response(['success' => true, 'counts' => ['Group 1' => 37]]),
-        ]);
-
-        $this->app->instance(WhatsAppServiceInterface::class, $this->service());
-        $this->connectedSession();
-
-        Livewire::actingAs(User::factory()->create())
-            ->test(GroupIndex::class)
-            ->call('syncFromWhatsApp');
-
-        $this->assertSame(37, $group->refresh()->member_count);
-    }
-
-    public function test_member_counts_are_not_fetched_when_the_setting_is_off(): void
-    {
-        config(['educationhub.whatsapp.driver' => 'playwright']);
-        $category = Category::factory()->create();
-        config([
-            'educationhub.groups.default_category_id' => $category->id,
-            'educationhub.whatsapp.sync.fetch_member_counts' => false,
-        ]);
-
-        Http::fake([self::URL.'/groups*' => Http::response(['success' => true, 'groups' => ['Group 1']])]);
+        Http::fake([self::URL.'/groups*' => Http::response(['success' => true, 'groups' => ['Group 1', 'Group 2']])]);
 
         $this->app->instance(WhatsAppServiceInterface::class, $this->service());
         $this->connectedSession();
@@ -373,31 +316,8 @@ class PlaywrightWorkerTest extends TestCase
             ->call('syncFromWhatsApp');
 
         Http::assertNotSent(fn (Request $r) => str_contains($r->url(), 'member-counts'));
-    }
-
-    public function test_a_sync_still_succeeds_when_member_counts_cannot_be_read(): void
-    {
-        config(['educationhub.whatsapp.driver' => 'playwright']);
-        $category = Category::factory()->create();
-        config([
-            'educationhub.groups.default_category_id' => $category->id,
-            'educationhub.whatsapp.sync.fetch_member_counts' => true,
-        ]);
-
-        Http::fake([
-            self::URL.'/groups*' => Http::response(['success' => true, 'groups' => ['Group 1']]),
-            self::URL.'/member-counts' => Http::response(['success' => false, 'error_message' => 'busy'], 409),
-        ]);
-
-        $this->app->instance(WhatsAppServiceInterface::class, $this->service());
-        $this->connectedSession();
-
-        Livewire::actingAs(User::factory()->create())
-            ->test(GroupIndex::class)
-            ->call('syncFromWhatsApp');
-
-        // The import is the point of the sync; a missing count must not undo it.
-        $this->assertSame(1, Group::where('name', 'Group 1')->count());
+        $this->assertSame(2, Group::count());
+        $this->assertNull(Group::where('name', 'Group 1')->value('member_count'));
     }
 
     public function test_the_settings_button_updates_every_group_member_count(): void
@@ -407,9 +327,13 @@ class PlaywrightWorkerTest extends TestCase
         $one = Group::factory()->create(['name' => 'Group 1', 'member_count' => null]);
         $two = Group::factory()->create(['name' => 'Group 2', 'member_count' => 5]);
 
+        $three = Group::factory()->create(['name' => 'Group 3', 'member_count' => 7]);
+
         Http::fake([self::URL.'/member-counts' => Http::response(['success' => true, 'counts' => [
             'Group 1' => 30,
             'Group 2' => 41,
+            // No count available: the existing number must survive, not drop to zero.
+            'Group 3' => null,
         ]])]);
 
         $this->app->instance(WhatsAppServiceInterface::class, $this->service());
@@ -422,6 +346,7 @@ class PlaywrightWorkerTest extends TestCase
 
         $this->assertSame(30, $one->refresh()->member_count);
         $this->assertSame(41, $two->refresh()->member_count);
+        $this->assertSame(7, $three->refresh()->member_count, 'a group with no count keeps what it had');
     }
 
     /** One browser and one WhatsApp session: reading counts mid-campaign would fight the send. */
