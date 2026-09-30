@@ -87,16 +87,59 @@ async function openGroupChat(page, groupName) {
   const header = sel.openChatHeaderTitle(page);
   await header.waitFor({ state: 'visible', timeout: 10000 }).catch(() => {});
 
-  const headerTitle = (await header.innerText().catch(() => null))
-    || (await header.getAttribute('title').catch(() => null));
+  const headerTitle = await readTitle(header);
 
-  if (!headerTitle || headerTitle.trim() !== groupName.trim()) {
+  if (!headerTitle || !sameName(headerTitle, groupName)) {
     await clearSearch(page);
     throw new WhatsAppError(
       'GROUP_NOT_FOUND',
       `The opened chat ("${headerTitle ?? 'unknown'}") does not match "${groupName}" exactly.`,
     );
   }
+}
+
+/**
+ * Read a chat title the way a person sees it. WhatsApp draws emoji as <img> elements, so
+ * innerText drops them ("‼️ स्पर्धा परीक्षा 10 ‼️" reads as " स्पर्धा परीक्षा 10 ") and every
+ * group with emoji in its name looked like the wrong chat. The title attribute usually has
+ * the full name; failing that, stitch text nodes and the images' alt text together.
+ */
+async function readTitle(locator) {
+  const fromAttribute = await locator.getAttribute('title').catch(() => null);
+  if (fromAttribute && fromAttribute.trim()) {
+    return fromAttribute;
+  }
+
+  return locator.evaluate((el) => {
+    const parts = [];
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        parts.push(node.textContent);
+      } else if (node.nodeName === 'IMG') {
+        parts.push(node.getAttribute('alt') || '');
+      } else {
+        node.childNodes.forEach(walk);
+      }
+    };
+    walk(el);
+
+    return parts.join('');
+  }).catch(() => null);
+}
+
+/**
+ * Two spellings of one name: emoji variation selectors (U+FE0F), zero-width joiners and
+ * runs of whitespace differ between what WhatsApp stores and what its UI renders, and
+ * a person would call them the same. Everything else must match exactly.
+ */
+function sameName(a, b) {
+  const norm = (s) => String(s)
+    .normalize('NFC')
+    .replace(/[︎️​-‍]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return norm(a) === norm(b);
 }
 
 async function clearSearch(page) {
@@ -548,4 +591,7 @@ module.exports = {
   listChats,
   memberCounts,
   logOut,
+  // For the inspection scripts: open a chat with the real title check, without sending.
+  openGroupChat,
+  sameName,
 };
