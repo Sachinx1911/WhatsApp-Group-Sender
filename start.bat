@@ -50,7 +50,7 @@ set "PATH=%USERPROFILE%\bin;%PATH%"
 rem ---------- 2. Configuration -----------------------------------------
 if not exist .env (
     copy .env.example .env >nul
-    echo  [!] .env was created from .env.example.
+    echo  [i] .env was created from .env.example.
     echo      Open .env and set DB_PASSWORD, DB_ROOT_PASSWORD, ADMIN_PASSWORD and
     echo      WHATSAPP_WORKER_TOKEN, then run start.bat again.
     goto :fail
