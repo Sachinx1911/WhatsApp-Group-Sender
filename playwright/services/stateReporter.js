@@ -15,9 +15,16 @@ class StateReporter {
     this.timer = null;
   }
 
+  /** `getState` may be async: the worker re-reads the page on each beat. */
   start(getState) {
     this.getState = getState;
-    this.timer = setInterval(() => this.report(this.getState(), 'heartbeat'), this.heartbeatMs);
+    this.timer = setInterval(async () => {
+      try {
+        await this.report(await this.getState(), 'heartbeat');
+      } catch (error) {
+        this.logger.warn(`[state-reporter] heartbeat failed: ${error.message}`);
+      }
+    }, this.heartbeatMs);
     this.timer.unref?.();
   }
 

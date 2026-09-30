@@ -136,6 +136,7 @@ class DataAndBackupTest extends TestCase
 
         $backup = ExportAllData::list()[0]['name'];
         $this->assertStringStartsWith('education-hub-before-reset-', $backup);
+        $this->get(route('backups.download', $backup))->assertOk()->assertDownload($backup);
         $data = json_decode($this->openZip(ExportAllData::DIRECTORY.'/'.$backup)->getFromName('data.json'), true);
         $this->assertCount(3, $data['tables']['groups']);
     }

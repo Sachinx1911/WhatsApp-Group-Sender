@@ -42,7 +42,7 @@ return [
             'queue' => env('DB_QUEUE', 'default'),
             // Must be longer than the longest job (SendToGroupJob: timeout + delay), or a running
             // send could be picked up a second time and delivered twice.
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 300),
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 600), // above SendToGroupJob::$timeout
             'after_commit' => false,
         ],
 

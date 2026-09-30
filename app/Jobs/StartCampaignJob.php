@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Enums\CampaignStatus;
 use App\Enums\SendStatus;
 use App\Models\Campaign;
+use App\Services\Campaigns\CampaignRunner;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
@@ -29,10 +30,19 @@ class StartCampaignJob implements ShouldQueue
             return;
         }
 
-        $campaign->campaignGroups()
+        $rowIds = $campaign->campaignGroups()
             ->where('status', SendStatus::Pending)
             ->orderBy('id')
-            ->pluck('id')
-            ->each(fn (int $rowId) => SendToGroupJob::dispatch($rowId));
+            ->pluck('id');
+
+        // Nothing left to send (e.g. paused while the last group was in flight, then
+        // resumed): close the campaign now, or it stays "Sending" and blocks every other one.
+        if ($rowIds->isEmpty()) {
+            app(CampaignRunner::class)->finishIfDone($campaign);
+
+            return;
+        }
+
+        $rowIds->each(fn (int $rowId) => SendToGroupJob::dispatch($rowId));
     }
 }

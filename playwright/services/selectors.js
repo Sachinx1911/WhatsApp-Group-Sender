@@ -64,7 +64,9 @@ function chatRows(page) {
  * dependable way to tell them apart.
  */
 function chatFilterTab(page, label) {
-  return page.getByRole('tab', { name: new RegExp(`^${label}$`, 'i') }).first();
+  // A tab with unread chats carries a count badge, so its accessible name becomes e.g.
+  // "Groups 279". Match the label followed by nothing or a number, never a longer word.
+  return page.getByRole('tab', { name: new RegExp(`^${label}(\\s+\\d+)?$`, 'i') }).first();
 }
 
 /** The scrollable chat-list pane. The list is virtualised: only visible rows exist. */

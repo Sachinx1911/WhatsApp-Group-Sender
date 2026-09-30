@@ -97,8 +97,14 @@ class Show extends Component
     #[Computed]
     public function stalled(): bool
     {
-        if ($this->campaign->status !== CampaignStatus::Sending || $this->counts['pending'] + $this->counts['processing'] === 0) {
+        if ($this->campaign->status !== CampaignStatus::Sending) {
             return false;
+        }
+
+        // "Sending" with nothing left to send should have been closed; offer the restart,
+        // which finishes it (StartCampaignJob closes a campaign with no pending rows).
+        if ($this->counts['pending'] + $this->counts['processing'] === 0) {
+            return true;
         }
 
         $lastActivity = $this->campaign->campaignGroups()->max('updated_at') ?? $this->campaign->started_at;

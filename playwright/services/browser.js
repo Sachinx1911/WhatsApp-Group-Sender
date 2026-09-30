@@ -16,10 +16,17 @@ class BrowserSession {
     this.context = null;
     /** @type {import('playwright').Page|null} */
     this.page = null;
+    /** @type {Array<() => void>} */
+    this.closedListeners = [];
   }
 
   isOpen() {
     return this.context !== null && this.page !== null && !this.page.isClosed();
+  }
+
+  /** Called when the Chromium window goes away for any reason (user closed it, crash, close()). */
+  onClosed(listener) {
+    this.closedListeners.push(listener);
   }
 
   /** Launch the browser (idempotent) and return the WhatsApp Web page. */
@@ -28,17 +35,25 @@ class BrowserSession {
       return this.page;
     }
 
-    this.context = await chromium.launchPersistentContext(this.userDataDir, {
-      headless: this.headless,
-      viewport: { width: 1280, height: 900 },
-      args: ['--disable-blink-features=AutomationControlled'],
-    });
+    // The window is still up but the WhatsApp tab was closed: reuse the context. Launching a
+    // second one on the same profile fails with "profile already in use".
+    if (this.context === null) {
+      this.context = await chromium.launchPersistentContext(this.userDataDir, {
+        headless: this.headless,
+        viewport: { width: 1280, height: 900 },
+        args: ['--disable-blink-features=AutomationControlled'],
+      });
 
-    this.page = this.context.pages()[0] ?? (await this.context.newPage());
-    this.context.on('close', () => {
-      this.context = null;
-      this.page = null;
-    });
+      this.context.on('close', () => {
+        this.context = null;
+        this.page = null;
+        for (const listener of this.closedListeners) {
+          Promise.resolve().then(listener).catch(() => {});
+        }
+      });
+    }
+
+    this.page = this.context.pages().find((p) => !p.isClosed()) ?? (await this.context.newPage());
 
     await this.page.goto('https://web.whatsapp.com', { waitUntil: 'domcontentloaded' });
 

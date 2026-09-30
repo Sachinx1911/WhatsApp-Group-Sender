@@ -1,5 +1,7 @@
 'use strict';
 
+const fs = require('node:fs');
+const path = require('node:path');
 const sel = require('./selectors');
 
 /** Select-all is Cmd+A on macOS and Ctrl+A elsewhere; using the wrong one silently types over nothing. */
@@ -138,7 +140,7 @@ async function typeMultiline(page, box, text) {
   await page.keyboard.press(SELECT_ALL).catch(() => {});
   await page.keyboard.press('Delete').catch(() => {});
 
-  const lines = String(text).split('\n');
+  const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
 
   for (let i = 0; i < lines.length; i++) {
     if (lines[i].length > 0) {
@@ -161,12 +163,16 @@ async function sendTextMessage(page, message) {
 
   await typeMultiline(page, composer, message);
 
+  const before = await lastMessageMarker(page);
+
   const send = sel.sendButton(page);
   await send.click({ timeout: 5000 }).catch(async () => {
+    // Enter only sends while the composer has focus; confirmSent() catches the case where it did not.
+    await composer.focus().catch(() => {});
     await page.keyboard.press('Enter');
   });
 
-  await confirmSent(page);
+  await confirmSent(page, before);
 }
 
 const IMAGE_FILE = /\.(png|jpe?g|gif|webp)$/i;
@@ -222,11 +228,13 @@ async function sendAttachmentMessage(page, message, attachmentPath) {
     await typeMultiline(page, caption, message);
   }
 
+  const before = await lastMessageMarker(page);
+
   await send.click({ timeout: 10000 }).catch(() => {
     throw new WhatsAppError('MESSAGE_SEND_FAILED', 'Could not confirm sending the attachment.');
   });
 
-  await confirmSent(page);
+  await confirmSent(page, before);
 }
 
 /** Back out of a half-opened attachment preview so the next send starts from a clean chat. */
@@ -238,17 +246,44 @@ async function closePreview(page) {
 }
 
 /**
- * Wait until WhatsApp confirms the message left this device: the newest bubble carries a
- * delivery state ("Sent", "Delivered", "Read"). Until then the message is still pending,
- * and reporting success would be a lie the admin cannot check later.
+ * Remember which message bubble is newest right now, so confirmSent() can tell a bubble
+ * this send created from one that was already there. In a group the admin broadcasts
+ * to, the previous bubble is usually the admin's own and already shows "Delivered" or
+ * "Read", so the delivery tick alone proves nothing.
  */
-async function confirmSent(page, timeoutMs = 20000) {
+async function lastMessageMarker(page) {
+  return page.evaluate(({ rowSelector }) => {
+    const rows = document.querySelectorAll(rowSelector);
+    const last = rows[rows.length - 1];
+    if (!last) return { id: null, count: 0 };
+
+    const withId = last.querySelector('[data-id]');
+
+    return { id: (withId && withId.getAttribute('data-id')) || last.getAttribute('data-id') || null, count: rows.length };
+  }, { rowSelector: sel.MESSAGE_ROW_SELECTOR }).catch(() => ({ id: null, count: 0 }));
+}
+
+/**
+ * Wait until WhatsApp confirms the message left this device: a bubble that did not exist
+ * before this send carries a delivery state ("Sent", "Delivered", "Read"). Until then
+ * the message is still pending, and reporting success would be a lie the admin cannot
+ * check later.
+ *
+ * Runs after the send action, so a timeout here is UNCONFIRMED, not TIMEOUT: the message
+ * may well have gone out, and retrying could deliver it twice.
+ */
+async function confirmSent(page, before, timeoutMs = 20000) {
   try {
     await page.waitForFunction(
-      ({ rowSelector, statusPattern }) => {
+      ({ rowSelector, statusPattern, before }) => {
         const rows = document.querySelectorAll(rowSelector);
         const last = rows[rows.length - 1];
         if (!last) return false;
+
+        const withId = last.querySelector('[data-id]');
+        const id = (withId && withId.getAttribute('data-id')) || last.getAttribute('data-id') || null;
+        const isNew = (before.id !== null && id !== null) ? id !== before.id : rows.length > before.count;
+        if (!isNew) return false;
 
         const status = new RegExp(statusPattern, 'i');
 
@@ -256,12 +291,27 @@ async function confirmSent(page, timeoutMs = 20000) {
           .map((el) => (el.getAttribute('aria-label') || '').trim())
           .some((label) => status.test(label));
       },
-      { rowSelector: sel.MESSAGE_ROW_SELECTOR, statusPattern: sel.DELIVERY_STATUS_PATTERN },
+      { rowSelector: sel.MESSAGE_ROW_SELECTOR, statusPattern: sel.DELIVERY_STATUS_PATTERN, before },
       { timeout: timeoutMs, polling: 500 },
     );
   } catch {
-    throw new WhatsAppError('TIMEOUT', 'WhatsApp did not confirm the message was sent in time.');
+    throw new WhatsAppError('UNCONFIRMED', 'WhatsApp did not confirm the message was sent. Check the group before sending again.');
   }
+}
+
+/**
+ * Only files Laravel stored under storage/app may be sent. The worker trusts the token,
+ * not the path: without this check anything on the PC could be attached to a group.
+ */
+function assertAllowedAttachment(attachmentPath) {
+  const root = path.resolve(__dirname, '..', '..', 'storage', 'app') + path.sep;
+  const resolved = path.resolve(String(attachmentPath));
+
+  if (!resolved.toLowerCase().startsWith(root.toLowerCase()) || !fs.existsSync(resolved)) {
+    throw new WhatsAppError('MEDIA_UPLOAD_FAILED', 'The attachment is not in the media library.', resolved);
+  }
+
+  return resolved;
 }
 
 /** Full send flow for one group: open chat, send, confirm. Never throws for expected errors. */
@@ -269,6 +319,10 @@ async function sendToGroup(page, { group, message, attachmentPath }) {
   try {
     if ((await detectState(page)) !== STATE.CONNECTED) {
       throw new WhatsAppError('WHATSAPP_DISCONNECTED', 'WhatsApp is not connected.');
+    }
+
+    if (attachmentPath) {
+      attachmentPath = assertAllowedAttachment(attachmentPath);
     }
 
     await openGroupChat(page, group);

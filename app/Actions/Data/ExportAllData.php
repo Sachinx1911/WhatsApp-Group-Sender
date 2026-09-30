@@ -68,6 +68,7 @@ class ExportAllData
     /** Only plain backup file names are accepted (no paths). */
     public static function isValidName(string $name): bool
     {
-        return (bool) preg_match('/^education-hub-[a-z]+-\d{4}-\d{2}-\d{2}-\d{6}\.zip$/', $name);
+        // The reason may contain hyphens ("before-reset"), so allow hyphenated words.
+        return (bool) preg_match('/^education-hub-[a-z]+(?:-[a-z]+)*-\d{4}-\d{2}-\d{2}-\d{6}\.zip$/', $name);
     }
 }

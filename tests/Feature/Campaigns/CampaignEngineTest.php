@@ -233,6 +233,43 @@ class CampaignEngineTest extends TestCase
         $this->assertSame(CampaignStatus::Completed, $campaign->fresh()->status);
     }
 
+    public function test_resume_with_nothing_left_closes_the_campaign(): void
+    {
+        Queue::fake();
+        $campaign = $this->create($this->makeGroups(2));
+        $rowIds = CampaignGroup::orderBy('id')->pluck('id');
+
+        // Pause lands while the last group is in flight: it finishes, but the campaign is paused.
+        $this->runJob($rowIds[0]);
+        app(CampaignRunner::class)->pause($campaign);
+        CampaignGroup::whereKey($rowIds[1])->update(['status' => SendStatus::Sent, 'sent_at' => now()]);
+        $this->assertSame(CampaignStatus::Paused, $campaign->fresh()->status);
+
+        $waiting = $this->create($this->makeGroups(1));
+        $this->assertSame(CampaignStatus::Queued, $waiting->status);
+
+        app(CampaignRunner::class)->resume($campaign);
+        app()->call([new StartCampaignJob($campaign->id), 'handle']);
+
+        $this->assertSame(CampaignStatus::Completed, $campaign->fresh()->status);
+        $this->assertSame(CampaignStatus::Sending, $waiting->fresh()->status); // no longer blocked
+    }
+
+    public function test_resume_and_cancel_are_guarded_against_stale_state(): void
+    {
+        Queue::fake();
+        $campaign = $this->create($this->makeGroups(1));
+        $stale = Campaign::find($campaign->id);
+
+        $this->runJob(CampaignGroup::sole()->id);
+        $this->assertSame(CampaignStatus::Completed, $campaign->fresh()->status);
+
+        app(CampaignRunner::class)->resume($stale); // still thinks it is paused? No: it was never paused
+        app(CampaignRunner::class)->cancel($stale); // loaded before completion
+
+        $this->assertSame(CampaignStatus::Completed, $campaign->fresh()->status);
+    }
+
     public function test_only_one_campaign_sends_at_a_time(): void
     {
         Queue::fake();
@@ -310,9 +347,11 @@ class CampaignEngineTest extends TestCase
 
         $this->artisan('campaigns:recover')->assertSuccessful();
 
+        // At start-up the queue was not running, so even a recent "processing" row was interrupted.
         $this->assertSame(SendStatus::Failed, $stuck->fresh()->status);
         $this->assertSame(SendErrorType::Unconfirmed, $stuck->fresh()->error_type);
-        $this->assertSame(SendStatus::Processing, $fresh->fresh()->status); // still within the allowance
+        $this->assertSame(SendStatus::Failed, $fresh->fresh()->status);
+        $this->assertSame(SendErrorType::Unconfirmed, $fresh->fresh()->error_type);
         $this->assertTrue(SendLog::where('error_type', SendErrorType::Unconfirmed)->exists());
         Queue::assertPushed(StartCampaignJob::class, fn ($job) => $job->campaignId === $campaign->id);
         $this->assertCount(0, $this->whatsapp->sent); // unconfirmed rows are never re-sent automatically

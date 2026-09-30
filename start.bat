@@ -17,6 +17,16 @@ if errorlevel 1 (
     exit /b 1
 )
 
+rem Apply any database changes that came with an update, and drop stale caches.
+php artisan migrate --force --no-interaction
+if errorlevel 1 (
+    echo.
+    echo PHP could not start the app. See the message above.
+    pause
+    exit /b 1
+)
+php artisan optimize:clear >nul
+
 rem Groups interrupted by a restart are marked "Delivery unconfirmed" instead of being sent twice.
 php artisan campaigns:recover
 if errorlevel 1 (

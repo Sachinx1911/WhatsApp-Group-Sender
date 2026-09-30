@@ -72,11 +72,17 @@ class CampaignRunner
     /** Continue a paused campaign — or queue it again if another campaign is sending now. */
     public function resume(Campaign $campaign): void
     {
-        if ($campaign->status !== CampaignStatus::Paused) {
+        // Guarded in the database, not on the loaded model: two Resume clicks, or a Resume
+        // racing the queue, must not flip a campaign that already moved on.
+        $resumed = Campaign::whereKey($campaign->id)
+            ->where('status', CampaignStatus::Paused)
+            ->update(['status' => CampaignStatus::Queued, 'paused_at' => null]);
+
+        if (! $resumed) {
             return;
         }
 
-        $campaign->update(['status' => CampaignStatus::Queued, 'paused_at' => null]);
+        $campaign->refresh();
         Log::channel('whatsapp')->info('Campaign resumed', ['campaign' => $campaign->id]);
 
         $this->startNextIfIdle();
@@ -84,14 +90,22 @@ class CampaignRunner
 
     public function cancel(Campaign $campaign): void
     {
-        if ($campaign->status->isFinished()) {
+        $cancelled = DB::transaction(function () use ($campaign) {
+            $cancelled = Campaign::whereKey($campaign->id)
+                ->whereIn('status', [CampaignStatus::Queued, CampaignStatus::Sending, CampaignStatus::Paused])
+                ->update(['status' => CampaignStatus::Cancelled, 'completed_at' => now(), 'paused_at' => null]);
+
+            if ($cancelled) {
+                $campaign->campaignGroups()->where('status', SendStatus::Pending)->update(['status' => SendStatus::Cancelled, 'updated_at' => now()]);
+                $campaign->refresh()->refreshCounters();
+            }
+
+            return $cancelled;
+        });
+
+        if (! $cancelled) {
             return;
         }
-
-        DB::transaction(function () use ($campaign) {
-            $campaign->campaignGroups()->where('status', SendStatus::Pending)->update(['status' => SendStatus::Cancelled, 'updated_at' => now()]);
-            $campaign->refreshCounters()->update(['status' => CampaignStatus::Cancelled, 'completed_at' => now(), 'paused_at' => null]);
-        });
 
         Log::channel('whatsapp')->info('Campaign cancelled', ['campaign' => $campaign->id, 'sent' => $campaign->sent_count]);
 
@@ -202,12 +216,17 @@ class CampaignRunner
      * marked "Delivery unconfirmed" (never re-sent automatically, to avoid duplicates),
      * sending campaigns are picked up again, and the next queued campaign starts.
      *
+     * At start-up nothing can legitimately be "processing" (the queue is not running yet),
+     * so every such row is interrupted, however recent. The age cutoff only applies when
+     * recovering while the queue is live, where a row may still be mid-send.
+     *
      * @return array{unconfirmed: int, restarted: int}
      */
-    public function recover(): array
+    public function recover(bool $queueIsRunning = false): array
     {
-        $cutoff = now()->subMinutes((int) config('educationhub.whatsapp.stuck_after_minutes', 5));
-        $stuck = CampaignGroup::where('status', SendStatus::Processing)->where('updated_at', '<', $cutoff)->get();
+        $stuck = CampaignGroup::where('status', SendStatus::Processing)
+            ->when($queueIsRunning, fn ($q) => $q->where('updated_at', '<', now()->subMinutes((int) config('educationhub.whatsapp.stuck_after_minutes', 5))))
+            ->get();
 
         foreach ($stuck as $row) {
             $type = SendErrorType::Unconfirmed;

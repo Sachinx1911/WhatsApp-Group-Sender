@@ -32,8 +32,15 @@ class Login extends Component
 
     public function login(): void
     {
-        $this->validate();
-        $this->ensureIsNotRateLimited();
+        try {
+            $this->validate();
+            $this->ensureIsNotRateLimited();
+        } catch (ValidationException $e) {
+            // Never echo the typed password back in the response, whatever failed.
+            $this->reset('password');
+
+            throw $e;
+        }
 
         if (! Auth::attempt(['email' => $this->email, 'password' => $this->password], $this->remember)) {
             RateLimiter::hit($this->throttleKey(), self::LOCKOUT_SECONDS);

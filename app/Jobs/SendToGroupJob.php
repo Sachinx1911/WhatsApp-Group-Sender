@@ -33,8 +33,12 @@ class SendToGroupJob implements ShouldQueue
     /** Queue attempts, including releases for automatic retries (the row itself allows max_attempts). */
     public int $tries = 6;
 
-    /** Seconds. Keep below queue.connections.database.retry_after. */
-    public int $timeout = 180;
+    /**
+     * Seconds. One job = one send (up to PlaywrightWhatsAppService::SEND_TIMEOUT) plus the
+     * pause before the next group (Settings allow up to 300 s). Keep below
+     * queue.connections.database.retry_after, or the queue hands the job out twice.
+     */
+    public int $timeout = 480;
 
     public function __construct(public int $campaignGroupId)
     {
@@ -80,12 +84,22 @@ class SendToGroupJob implements ShouldQueue
             $result = SendResult::failed($row->group_name, SendErrorType::BrowserError, technical: $e->getMessage());
         }
 
-        // Keep the header badge honest: a send tells us whether WhatsApp Web is really connected.
-        if ($result->success && ! $sessions->session()->isConnected()) {
-            $sessions->record(WhatsAppConnectionStatus::Connected, 'send');
-        }
+        try {
+            // Keep the header badge honest: a send tells us whether WhatsApp Web is really connected.
+            if ($result->success && ! $sessions->session()->isConnected()) {
+                $sessions->record(WhatsAppConnectionStatus::Connected, 'send');
+            }
 
-        $this->record($row, $result, $runner, $sessions);
+            $this->record($row, $result, $runner, $sessions);
+        } catch (Throwable $e) {
+            // The send itself is over; only the bookkeeping failed. Leaving the row
+            // "processing" would freeze the campaign, and a queue retry would not fix it
+            // because the row is no longer pending. Record what we know and let it finish.
+            report($e);
+            $this->markUnconfirmed($row, $e);
+
+            throw $e;
+        }
     }
 
     private function record(CampaignGroup $row, SendResult $result, CampaignRunner $runner, WhatsAppSessionManager $sessions): void
@@ -143,16 +157,30 @@ class SendToGroupJob implements ShouldQueue
     {
         $row = CampaignGroup::with('campaign')->find($this->campaignGroupId);
 
-        if (! $row || $row->status->isFinal() || $row->status === SendStatus::Failed) {
+        if ($row) {
+            $this->markUnconfirmed($row, $exception);
+        }
+    }
+
+    /** A row that is still pending/processing after a crash: fail it so the campaign can close. Idempotent. */
+    private function markUnconfirmed(CampaignGroup $row, ?Throwable $exception): void
+    {
+        $row->refresh();
+
+        if ($row->status->isFinal() || $row->status === SendStatus::Failed) {
             return;
         }
 
         $type = $row->status === SendStatus::Processing ? SendErrorType::Unconfirmed : SendErrorType::Unknown;
-        $row->update(['status' => SendStatus::Failed, 'error_type' => $type, 'error_message' => $type->label()]);
-        $this->log($row, SendStatus::Failed, "Unable to send to {$row->group_name}",
-            SendResult::failed($row->group_name, $type, technical: $exception?->getMessage()));
 
-        app(CampaignRunner::class)->finishIfDone($row->campaign);
+        try {
+            $row->update(['status' => SendStatus::Failed, 'error_type' => $type, 'error_message' => $type->label()]);
+            $this->log($row, SendStatus::Failed, "Unable to send to {$row->group_name}",
+                SendResult::failed($row->group_name, $type, technical: $exception?->getMessage()));
+            app(CampaignRunner::class)->finishIfDone($row->campaign);
+        } catch (Throwable $e) {
+            report($e); // the database is the problem; campaigns:recover cleans up at next start
+        }
     }
 
     private function log(CampaignGroup $row, SendStatus $status, string $message, ?SendResult $result = null): void

@@ -136,41 +136,54 @@ class GroupCsv
     {
         return DB::transaction(function () use ($rows, $createCategories, $updateExisting) {
             $summary = ['created' => 0, 'updated' => 0, 'skipped' => 0, 'categories_created' => 0];
-            $categoryIds = Category::pluck('id', 'name')->mapWithKeys(fn ($id, $n) => [mb_strtolower($n) => $id]);
-            $groups = Group::all()->keyBy(fn (Group $g) => mb_strtolower($g->name));
             $nextSort = (int) Category::max('sort_order') + 1;
 
+            // "Existing" is decided by the database, not by a PHP string compare: the unique
+            // index on names is utf8mb4_unicode_ci, which also equates accents and some
+            // Unicode spellings PHP sees as different. Comparing in PHP let such rows through
+            // as "new" and the insert then failed the whole import with a constraint error.
             foreach ($rows as $row) {
-                $categoryKey = mb_strtolower($row['category']);
-
-                if ($row['state'] === 'invalid'
-                    || (! $categoryIds->has($categoryKey) && ! $createCategories)
-                    || ($row['state'] === 'existing' && ! $updateExisting)) {
+                if ($row['state'] === 'invalid') {
                     $summary['skipped']++;
 
                     continue;
                 }
 
-                if (! $categoryIds->has($categoryKey)) {
+                $category = Category::where('name', $row['category'])->first();
+
+                if (! $category && ! $createCategories) {
+                    $summary['skipped']++;
+
+                    continue;
+                }
+
+                $group = Group::where('name', $row['name'])->first();
+
+                if ($group && ! $updateExisting) {
+                    $summary['skipped']++;
+
+                    continue;
+                }
+
+                if (! $category) {
                     $category = Category::create([
                         'name' => $row['category'],
                         'color' => Category::PALETTE[$nextSort % count(Category::PALETTE)],
                         'sort_order' => $nextSort++,
                     ]);
-                    $categoryIds->put($categoryKey, $category->id);
                     $summary['categories_created']++;
                 }
 
-                $attributes = ['category_id' => $categoryIds[$categoryKey], 'status' => $row['status']];
+                $attributes = ['category_id' => $category->id, 'status' => $row['status']];
                 if ($row['member_count'] !== null) {
                     $attributes['member_count'] = $row['member_count'];
                 }
 
-                if ($group = $groups->get(mb_strtolower($row['name']))) {
+                if ($group) {
                     $group->update($attributes);
                     $summary['updated']++;
                 } else {
-                    $groups->put(mb_strtolower($row['name']), Group::create(['name' => $row['name'], ...$attributes]));
+                    Group::create(['name' => $row['name'], ...$attributes]);
                     $summary['created']++;
                 }
             }

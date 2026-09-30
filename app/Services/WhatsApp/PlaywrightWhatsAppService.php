@@ -6,6 +6,7 @@ use App\Enums\SendErrorType;
 use App\Enums\WhatsAppConnectionStatus;
 use App\Models\Group;
 use App\Models\Media;
+use App\Models\WhatsAppSession;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -21,6 +22,13 @@ use Illuminate\Support\Facades\Storage;
  */
 class PlaywrightWhatsAppService implements WhatsAppServiceInterface
 {
+    /**
+     * Longest a single send may take before Laravel gives up. Must stay above the worker's
+     * own worst case (search retries + attachment preview + delivery confirmation, ~100 s),
+     * otherwise Laravel calls a send "lost" while Chromium is still finishing it.
+     */
+    public const SEND_TIMEOUT = 150;
+
     public function __construct(
         private readonly string $baseUrl,
         private readonly string $token,
@@ -35,30 +43,43 @@ class PlaywrightWhatsAppService implements WhatsAppServiceInterface
 
     public function connect(): WhatsAppConnectionStatus
     {
-        // Opening WhatsApp Web and (when needed) waiting for a QR scan can take a while.
-        $response = $this->safeRequest(fn () => $this->request(timeout: 30)->post('/connect'));
+        // Launching Chromium, loading WhatsApp Web and waiting for it to settle can take
+        // well over half a minute on a slow PC; a short timeout here reads as "worker not
+        // running" to the admin even though it is busy opening the window.
+        $response = $this->safeRequest(fn () => $this->request(timeout: 90)->post('/connect'));
 
         return $this->stateFrom($response->json('state'));
     }
 
     public function disconnect(): void
     {
-        $this->safeRequest(fn () => $this->request(timeout: 15)->post('/disconnect'));
+        $this->safeRequest(fn () => $this->request(timeout: 30)->post('/disconnect'));
     }
 
     public function sendToGroup(Group $group, string $message, ?Media $attachment = null): SendResult
     {
         try {
-            $response = $this->request(timeout: 45)->post('/send', array_filter([
+            $response = $this->request(timeout: self::SEND_TIMEOUT)->post('/send', array_filter([
                 'group' => $group->name,
                 'message' => $message,
                 'attachment_path' => $attachment ? Storage::disk('local')->path($attachment->path) : null,
-            ]));
+            ], fn ($value) => $value !== null && $value !== ''));
         } catch (ConnectionException $e) {
+            // A refused connection means no worker. A timeout means the worker took the
+            // request and may well have sent the message: never put that row back in the
+            // queue, or the group gets it twice on resume.
+            if ($this->isTimeout($e)) {
+                Log::channel('whatsapp')->error('Worker did not answer in time during send', ['group' => $group->name, 'error' => $e->getMessage()]);
+
+                return SendResult::failed($group->name, SendErrorType::Unconfirmed, technical: $e->getMessage());
+            }
+
             Log::channel('whatsapp')->error('Worker unreachable during send', ['group' => $group->name, 'error' => $e->getMessage()]);
 
             return SendResult::failed($group->name, SendErrorType::WorkerUnavailable);
         }
+
+        $this->touch();
 
         if ($response->status() === 409) {
             return SendResult::failed($group->name, SendErrorType::Unknown, technical: 'Worker busy with another send.');
@@ -82,7 +103,7 @@ class PlaywrightWhatsAppService implements WhatsAppServiceInterface
         $response = $this->safeRequest(fn () => $this->request(timeout: 120)->get('/groups', ['scope' => $scope]));
 
         if ($response->json('success') !== true) {
-            throw WorkerUnavailableException::make($response->json('error_message'));
+            throw WorkerUnavailableException::refused($response->json('error_message'));
         }
 
         return $response->json('groups') ?? [];
@@ -108,7 +129,7 @@ class PlaywrightWhatsAppService implements WhatsAppServiceInterface
         $response = $this->safeRequest(fn () => $this->request(timeout: $timeout)->post('/member-counts', ['names' => array_values($names)]));
 
         if ($response->json('success') !== true) {
-            throw WorkerUnavailableException::make($response->json('error_message'));
+            throw WorkerUnavailableException::refused($response->json('error_message'));
         }
 
         return $response->json('counts') ?? [];
@@ -134,11 +155,37 @@ class PlaywrightWhatsAppService implements WhatsAppServiceInterface
             throw WorkerUnavailableException::make($e->getMessage());
         }
 
+        $this->touch();
+
+        if ($response->status() === 409) {
+            throw WorkerUnavailableException::refused($response->json('error_message') ?: 'The worker is busy sending a message. Pause the campaign first.');
+        }
+
         if ($response->failed()) {
             throw WorkerUnavailableException::make("HTTP {$response->status()}");
         }
 
         return $response;
+    }
+
+    /**
+     * Any answer from the worker proves it is alive. Its own heartbeats can be starved
+     * while Laravel's single dev-server process is busy with a long worker call, so this
+     * keeps "worker running" honest during a sync or a campaign.
+     */
+    private function touch(): void
+    {
+        try {
+            WhatsAppSession::current()->forceFill(['last_seen_at' => now()])->save();
+        } catch (\Throwable) {
+            // Liveness display only; never let it break the request that just succeeded.
+        }
+    }
+
+    /** cURL reports a read timeout as errno 28; a dead worker refuses the connection instead. */
+    private function isTimeout(ConnectionException $e): bool
+    {
+        return (bool) preg_match('/timed? ?out|cURL error 28/i', $e->getMessage());
     }
 
     private function stateFrom(?string $state): WhatsAppConnectionStatus

@@ -54,6 +54,8 @@ class ImageProcessor
 
     private function load(string $path, string $mime): GdImage
     {
+        $this->ensureMemoryFor($path);
+
         $image = match ($mime) {
             'image/jpeg' => @imagecreatefromjpeg($path),
             'image/png' => @imagecreatefrompng($path),
@@ -65,6 +67,44 @@ class ImageProcessor
         }
 
         return $mime === 'image/jpeg' ? $this->orient($image, $path) : $image;
+    }
+
+    /**
+     * GD holds a decoded image at ~5 bytes per pixel, and rotating keeps two copies. A 24 MP
+     * phone photo therefore needs ~250 MB, more than the default memory_limit. Running out
+     * is a fatal error no catch block sees, which leaves the uploaded file on disk with no
+     * database row. Raise the limit for this request when possible; refuse otherwise.
+     */
+    private function ensureMemoryFor(string $path): void
+    {
+        [$width, $height] = @getimagesize($path) ?: [0, 0];
+        $needed = (int) ($width * $height * 5 * 2) + 32 * 1024 * 1024 + memory_get_usage(true);
+        $limit = $this->bytes((string) ini_get('memory_limit'));
+
+        if ($limit < 0 || $needed <= $limit) {
+            return;
+        }
+
+        if (@ini_set('memory_limit', (string) $needed) === false || $this->bytes((string) ini_get('memory_limit')) < $needed) {
+            throw new RuntimeException('This photo is too large to process (about '.round($width * $height / 1e6).' megapixels). Resize it below 4000×4000 and upload again.');
+        }
+    }
+
+    private function bytes(string $ini): int
+    {
+        $ini = trim($ini);
+        if ($ini === '' || $ini === '-1') {
+            return -1;
+        }
+
+        $value = (int) $ini;
+
+        return match (strtolower(substr($ini, -1))) {
+            'g' => $value * 1024 ** 3,
+            'm' => $value * 1024 ** 2,
+            'k' => $value * 1024,
+            default => $value,
+        };
     }
 
     /** Rotate according to EXIF so portrait phone photos are not shown sideways. */

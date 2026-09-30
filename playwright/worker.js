@@ -2,6 +2,7 @@
 
 require('dotenv').config();
 
+const crypto = require('node:crypto');
 const http = require('node:http');
 const { URL } = require('node:url');
 
@@ -47,6 +48,20 @@ async function refreshState() {
   return state;
 }
 
+/**
+ * Claim the browser for one operation. Set synchronously, before any await, so two
+ * requests arriving together cannot both pass the check and drive the page at once.
+ */
+function claimBrowser(res, what) {
+  if (sending) {
+    sendJson(res, 409, { success: false, error_type: 'UNKNOWN_ERROR', error_message: `Worker is busy ${what}.` });
+    return false;
+  }
+
+  sending = true;
+  return true;
+}
+
 function sendJson(res, status, body) {
   const data = JSON.stringify(body);
   res.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) });
@@ -76,7 +91,12 @@ function isLocal(req) {
 
 function hasValidToken(req) {
   const token = req.headers['x-worker-token'];
-  return typeof token === 'string' && token.length > 0 && token === WORKER_TOKEN;
+  if (typeof token !== 'string' || token.length === 0) return false;
+
+  const given = Buffer.from(token);
+  const expected = Buffer.from(WORKER_TOKEN);
+
+  return given.length === expected.length && crypto.timingSafeEqual(given, expected);
 }
 
 const routes = {
@@ -93,6 +113,10 @@ const routes = {
   },
 
   'POST /disconnect': async (req, res) => {
+    if (sending) {
+      return sendJson(res, 409, { success: false, error_message: 'Worker is busy sending a message. Pause the campaign first.' });
+    }
+
     if (session.isOpen()) {
       try {
         await wa.logOut(session.page);
@@ -108,6 +132,10 @@ const routes = {
   },
 
   'POST /restart': async (req, res) => {
+    if (sending) {
+      return sendJson(res, 409, { success: false, error_message: 'Worker is busy sending a message. Pause the campaign first.' });
+    }
+
     await session.reload();
     const state = await wa.waitForSettledState(session.page, 20000);
     await reportIfChanged(state, 'restart');
@@ -122,6 +150,9 @@ const routes = {
     // ?scope=groups (default) reads WhatsApp's Groups tab; ?scope=all reads every chat.
     const scope = new URL(req.url, `http://${HOST}:${PORT}`).searchParams.get('scope') === 'all' ? 'all' : 'groups';
 
+    // Listing clicks the filter tabs and scrolls the chat list, which would wreck a send in progress.
+    if (!claimBrowser(res, 'sending a message')) return;
+
     try {
       log(`listing chats (scope: ${scope})`);
       const groups = await wa.listChats(session.page, scope);
@@ -130,35 +161,34 @@ const routes = {
     } catch (error) {
       const errorType = error.errorType || 'UNKNOWN_ERROR';
       sendJson(res, 200, { success: false, error_type: errorType, error_message: error.message });
+    } finally {
+      sending = false;
     }
   },
 
   // Member counts are read one group at a time from each group's info panel, so this is a
   // separate call from listing: the cost grows with how many groups are asked for.
   'POST /member-counts': async (req, res) => {
-    if (sending) {
-      return sendJson(res, 409, { success: false, error_message: 'Worker is busy sending a message.' });
-    }
+    if (!claimBrowser(res, 'sending a message')) return;
 
-    if (!session.isOpen()) {
-      return sendJson(res, 200, { success: false, error_type: 'WHATSAPP_DISCONNECTED', error_message: 'WhatsApp is not connected.' });
-    }
-
-    let body;
     try {
-      body = await readJsonBody(req);
-    } catch {
-      return sendJson(res, 400, { success: false, error_message: 'Invalid JSON body.' });
-    }
+      if (!session.isOpen()) {
+        return sendJson(res, 200, { success: false, error_type: 'WHATSAPP_DISCONNECTED', error_message: 'WhatsApp is not connected.' });
+      }
 
-    const names = Array.isArray(body.names) ? body.names.filter((n) => typeof n === 'string' && n.trim()) : [];
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        return sendJson(res, 400, { success: false, error_message: 'Invalid JSON body.' });
+      }
 
-    if (names.length === 0) {
-      return sendJson(res, 422, { success: false, error_message: '"names" must be a non-empty array.' });
-    }
+      const names = Array.isArray(body.names) ? body.names.filter((n) => typeof n === 'string' && n.trim()) : [];
 
-    sending = true;
-    try {
+      if (names.length === 0) {
+        return sendJson(res, 422, { success: false, error_message: '"names" must be a non-empty array.' });
+      }
+
       log(`reading member counts for ${names.length} group(s)`);
       const counts = await wa.memberCounts(session.page, names);
       const found = Object.values(counts).filter((c) => c !== null).length;
@@ -173,32 +203,32 @@ const routes = {
   },
 
   'POST /send': async (req, res) => {
-    if (sending) {
-      return sendJson(res, 409, { success: false, error_type: 'UNKNOWN_ERROR', error_message: 'Worker is busy sending another message.' });
-    }
+    if (!claimBrowser(res, 'sending another message')) return;
 
-    let body;
-    try {
-      body = await readJsonBody(req);
-    } catch {
-      return sendJson(res, 400, { success: false, error_type: 'UNKNOWN_ERROR', error_message: 'Invalid JSON body.' });
-    }
-
-    const { group, message, attachment_path: attachmentPath } = body;
-
-    if (!group || typeof group !== 'string') {
-      return sendJson(res, 422, { success: false, error_type: 'UNKNOWN_ERROR', error_message: '"group" is required.' });
-    }
-
-    if (!session.isOpen()) {
-      return sendJson(res, 200, { success: false, group, error_type: 'WHATSAPP_DISCONNECTED', error_message: 'WhatsApp is not connected.' });
-    }
-
-    sending = true;
+    let group = null;
     const startedAt = Date.now();
-    log(`send started: "${group}"${attachmentPath ? ' (with attachment)' : ''}`);
 
     try {
+      let body;
+      try {
+        body = await readJsonBody(req);
+      } catch {
+        return sendJson(res, 400, { success: false, error_type: 'UNKNOWN_ERROR', error_message: 'Invalid JSON body.' });
+      }
+
+      const { message, attachment_path: attachmentPath } = body;
+      group = body.group;
+
+      if (!group || typeof group !== 'string') {
+        return sendJson(res, 422, { success: false, error_type: 'UNKNOWN_ERROR', error_message: '"group" is required.' });
+      }
+
+      if (!session.isOpen()) {
+        return sendJson(res, 200, { success: false, group, error_type: 'WHATSAPP_DISCONNECTED', error_message: 'WhatsApp is not connected.' });
+      }
+
+      log(`send started: "${group}"${attachmentPath ? ' (with attachment)' : ''}`);
+
       const result = await wa.sendToGroup(session.page, { group, message: message || '', attachmentPath: attachmentPath || null });
       const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
 
@@ -257,7 +287,18 @@ server.listen(PORT, HOST, async () => {
   log(`worker started, listening on http://${HOST}:${PORT}`);
   log(`reporting state to ${LARAVEL_URL} every ${HEARTBEAT_MS}ms`);
 
-  reporter.start(() => currentState);
+  // Each heartbeat re-reads the page, so a closed window or a logged-out phone reaches
+  // Laravel within one beat even when nobody is looking at Settings. detectState() only
+  // reads the DOM, so it is safe during a send.
+  reporter.start(async () => {
+    const state = await wa.detectState(session.page).catch(() => currentState);
+    if (state !== currentState) {
+      log(`state: ${currentState} -> ${state} (heartbeat)`);
+      currentState = state;
+    }
+    return state;
+  });
+  session.onClosed(() => reportIfChanged(wa.STATE.DISCONNECTED, 'browser closed'));
   await reportIfChanged(wa.STATE.STARTING, 'boot');
 
   // Auto-open the browser on boot so a previously-linked session reconnects without

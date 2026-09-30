@@ -137,7 +137,14 @@ class Index extends Component
 
     public function bulkSetStatus(string $status): void
     {
-        $status = GroupStatus::from($status);
+        $status = GroupStatus::tryFrom($status);
+
+        if (! $status) {
+            $this->dispatch('toast', type: 'error', message: 'Choose Active or Inactive.');
+
+            return;
+        }
+
         $count = $this->selectedQuery()->update(['status' => $status]);
 
         $this->finishBulk("{$count} ".str('group')->plural($count)." set to {$status->label()}");

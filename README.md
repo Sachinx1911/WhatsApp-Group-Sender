@@ -1,58 +1,64 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# Education Hub — WhatsApp Group Sender
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+Sends study material (text, image or PDF) to many WhatsApp groups from one local Windows PC.
+Laravel 13 + Livewire, MySQL in Docker, and a Playwright worker that drives WhatsApp Web in a
+visible Chromium window. No WhatsApp API is used. Full specification: `docs/MASTER_PROMPT.md`.
 
-## About Laravel
+## Requirements (Windows)
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+| Tool | Version | Notes |
+|---|---|---|
+| PHP | 8.3+ | `winget install PHP.PHP.8.4`. Create `php.ini` from `php.ini-development` and enable: `curl fileinfo gd intl mbstring openssl pdo_mysql pdo_sqlite sqlite3 sodium zip exif`. Set `memory_limit=512M`, `upload_max_filesize=100M`, `post_max_size=110M`. |
+| Composer | 2.x | https://getcomposer.org |
+| Node.js | 20+ | https://nodejs.org |
+| Docker Desktop | any | Runs MySQL only. Must be started before the app. |
+| Git | any | |
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
-
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
-
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## First-time setup
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+git clone https://github.com/Sachinx1911/WhatsApp-Group-Sender.git
+cd WhatsApp-Group-Sender
+copy .env.example .env
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+Edit `.env` and set real values for `DB_PASSWORD`, `DB_ROOT_PASSWORD`, `ADMIN_PASSWORD`
+(8+ characters; the placeholder is refused) and `WHATSAPP_WORKER_TOKEN` (a long random string).
+Then:
 
-## Contributing
+```bash
+docker compose up -d --wait
+composer setup
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+`composer setup` installs dependencies, generates the app key, runs migrations, creates the
+admin login and default categories, builds the frontend and installs the WhatsApp worker
+(including Chromium). Finally put the **same** `WHATSAPP_WORKER_TOKEN` in `playwright/.env`.
 
-## Code of Conduct
+## Daily use
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+1. Start Docker Desktop.
+2. Double-click `start.bat`. It applies updates, recovers interrupted campaigns, and starts
+   the web app, the sending queue and the WhatsApp worker, then opens http://127.0.0.1:8010.
+3. Sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`.
+4. The first time, a Chromium window shows a QR code: scan it from **WhatsApp → Linked
+   devices**. The login is kept in `storage/app/whatsapp-session/` and survives restarts.
 
-## Security Vulnerabilities
+Keep the `start.bat` window and the Chromium window open while sending.
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+## Practice mode vs real sending
 
-## License
+`WHATSAPP_DRIVER=fake` (the default) only pretends to send. Set `WHATSAPP_DRIVER=playwright`
+in `.env` and restart to send for real. Always test with the test group first
+(Settings → Sending Settings), then 2–3 groups, before a full campaign.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+## Development
+
+```bash
+composer dev        # server + queue + vite + worker with live reload
+composer test       # feature tests (SQLite in memory)
+vendor/bin/pint     # code style
+```
+
+When WhatsApp changes its layout, every locator lives in `playwright/services/selectors.js`;
+see `playwright/README.md` for the inspection scripts.
