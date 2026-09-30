@@ -73,7 +73,7 @@ async function openGroupChat(page, groupName) {
   await sleep(1200); // let WhatsApp's own search debounce/filter run
 
   const result = sel.chatListResult(page, groupName);
-  const found = await result.first().isVisible().catch(() => false);
+  const found = await scrollUntilVisible(page, result.first());
 
   if (!found) {
     await clearSearch(page);
@@ -96,6 +96,41 @@ async function openGroupChat(page, groupName) {
       `The opened chat ("${headerTitle ?? 'unknown'}") does not match "${groupName}" exactly.`,
     );
   }
+}
+
+/**
+ * Search results are a virtualised list: only the rows on screen exist in the DOM. A
+ * short name such as "Mpsc" matches a hundred groups, and the exact one can sit far
+ * below the fold, so "not visible" does not mean "not there". Scroll the list in steps
+ * looking for the row, then bring it into view for the click.
+ */
+async function scrollUntilVisible(page, row, maxPasses = 40) {
+  const pane = sel.chatListScroller(page);
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    if (await row.isVisible().catch(() => false)) {
+      await row.scrollIntoViewIfNeeded().catch(() => {});
+      return true;
+    }
+
+    const moved = await pane.evaluate((el) => {
+      const from = el.scrollTop;
+      el.scrollTop = from + el.clientHeight * 0.8;
+      return el.scrollTop !== from;
+    }).catch(() => false);
+
+    if (!moved) break; // end of the list
+    await sleep(350);
+  }
+
+  if (await row.isVisible().catch(() => false)) {
+    await row.scrollIntoViewIfNeeded().catch(() => {});
+    return true;
+  }
+
+  await pane.evaluate((el) => { el.scrollTop = 0; }).catch(() => {});
+
+  return false;
 }
 
 /**
