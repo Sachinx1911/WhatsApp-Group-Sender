@@ -30,30 +30,87 @@
             @switch($section)
                 {{-- ================= WhatsApp ================= --}}
                 @case('whatsapp')
-                    @php $session = $this->session; @endphp
-                    <div class="flex flex-wrap items-center gap-4 rounded-xl border border-line p-4">
-                        <span @class(['grid size-12 place-items-center rounded-xl',
-                            'bg-success-soft text-success' => $session->isConnected(),
-                            'bg-danger-soft text-danger' => ! $session->isConnected()])>
-                            <x-lucide-message-circle class="size-6" />
-                        </span>
-                        <div class="min-w-0 flex-1">
-                            <p class="text-sm text-muted">Status</p>
-                            <p class="text-lg font-semibold">{{ $session->isConnected() ? '🟢' : '🔴' }} {{ $session->status->label() }}</p>
-                            @if ($session->last_connected_at)
-                                <p class="text-xs text-muted">Last connected {{ $session->last_connected_at->format('d M Y, g:i A') }}</p>
-                            @endif
+                    @php
+                        $session = $this->session;
+                        $health = $this->health;
+                        $practice = config('educationhub.whatsapp.driver') === 'fake';
+                        $waiting = in_array($session->status, [\App\Enums\WhatsAppConnectionStatus::Starting, \App\Enums\WhatsAppConnectionStatus::WaitingForQr], true);
+                    @endphp
+                    <div @if ($waiting) wire:poll.3s @else wire:poll.30s.visible @endif>
+                        <div class="flex flex-wrap items-center gap-4 rounded-xl border border-line p-4">
+                            <span @class(['grid size-12 place-items-center rounded-xl',
+                                'bg-success-soft text-success' => $session->isConnected(),
+                                'bg-warning-soft text-warning' => $waiting,
+                                'bg-danger-soft text-danger' => ! $session->isConnected() && ! $waiting])>
+                                <x-lucide-message-circle class="size-6" />
+                            </span>
+                            <div class="min-w-0 flex-1">
+                                <p class="text-sm text-muted">Status</p>
+                                <p class="text-lg font-semibold">{{ $session->isConnected() ? '🟢' : ($waiting ? '🟡' : '🔴') }} {{ $session->status->label() }}</p>
+                                @if ($session->last_connected_at)
+                                    <p class="text-xs text-muted">Last connected {{ $session->last_connected_at->format('d M Y, g:i A') }}</p>
+                                @endif
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                @if ($session->isConnected())
+                                    <x-ui.button variant="danger" size="sm" icon="log-out" x-on:click="$dispatch('open-modal', '{{ \App\Livewire\Settings\Index::DISCONNECT_MODAL }}')">Disconnect</x-ui.button>
+                                @else
+                                    <x-ui.button size="sm" icon="qr-code" wire:click="connectWhatsApp" wire:loading.attr="disabled" wire:target="connectWhatsApp">{{ $waiting ? 'Open WhatsApp Web again' : 'Connect WhatsApp' }}</x-ui.button>
+                                @endif
+                                <x-ui.button variant="secondary" size="sm" icon="refresh-cw" wire:click="refreshSession" wire:loading.attr="disabled" wire:target="refreshSession">Refresh Session</x-ui.button>
+                            </div>
                         </div>
+
+                        @if ($waiting)
+                            <div class="mt-4 rounded-xl border border-amber-200 bg-warning-soft px-4 py-3 text-[13px] text-amber-900">
+                                <p class="mb-1.5 flex items-center gap-2 font-semibold"><x-lucide-smartphone class="size-4" /> Scan the QR code to link this computer</p>
+                                <ol class="list-decimal space-y-0.5 pl-5">
+                                    <li>A Chromium window with WhatsApp Web has opened on this computer.</li>
+                                    <li>On your phone open WhatsApp → <b>Settings</b> (or ⋮) → <b>Linked devices</b> → <b>Link a device</b>.</li>
+                                    <li>Point the phone at the QR code. This page updates by itself when you are connected.</li>
+                                </ol>
+                            </div>
+                        @endif
+
+                        <dl class="mt-4 divide-y divide-line text-[13px]">
+                            <div class="flex justify-between gap-4 py-2.5"><dt class="text-muted">Sending engine</dt>
+                                <dd class="text-right font-medium">{{ $practice ? 'Practice mode (nothing is really sent)' : 'WhatsApp Web (Playwright)' }}</dd></div>
+                            <div class="flex justify-between gap-4 py-2.5"><dt class="text-muted">WhatsApp worker</dt>
+                                <dd class="text-right">
+                                    @if ($practice)
+                                        <span class="font-medium text-success">Built in</span>
+                                    @elseif ($health['worker'])
+                                        <span class="font-medium text-success">Running</span>
+                                        <span class="block text-xs text-muted">Last report {{ $session->last_seen_at->diffForHumans() }}</span>
+                                    @else
+                                        <span class="font-medium text-danger">Not running</span>
+                                        <span class="block text-xs text-muted">Start the app with <b>start.bat</b></span>
+                                    @endif
+                                </dd></div>
+                            <div class="flex justify-between gap-4 py-2.5"><dt class="text-muted">Sending queue</dt>
+                                <dd class="text-right">
+                                    @if ($health['queueStalled'])
+                                        <span class="font-medium text-danger">Not picking up messages</span>
+                                        <span class="block text-xs text-muted">Close the app and start it again with <b>start.bat</b></span>
+                                    @elseif ($health['sending'])
+                                        <span class="font-medium text-success">Sending</span>
+                                        <a href="{{ route('campaigns.show', $health['sending']) }}" class="block text-xs text-primary hover:underline">{{ $health['sending']->title }}</a>
+                                    @else
+                                        <span class="font-medium">Idle</span>
+                                    @endif
+                                </dd></div>
+                            <div class="flex justify-between gap-4 py-2.5"><dt class="text-muted">Browser profile</dt><dd class="font-medium">{{ $session->profile_name }}</dd></div>
+                        </dl>
+
+                        <p class="mt-4 flex gap-2 rounded-xl bg-primary-soft px-3.5 py-3 text-[13px] text-blue-800">
+                            <x-lucide-info class="mt-0.5 size-4 shrink-0" />
+                            @if ($practice)
+                                Practice mode: Connect and Disconnect work instantly without a QR code, so you can try the app safely. The real WhatsApp Web connection is added in Phase 14.
+                            @else
+                                The login stays on this computer only (a private browser profile). If WhatsApp disconnects while sending, the campaign pauses and you can resume it after connecting again.
+                            @endif
+                        </p>
                     </div>
-                    <dl class="mt-4 divide-y divide-line text-[13px]">
-                        <div class="flex justify-between gap-4 py-2.5"><dt class="text-muted">Sending engine</dt>
-                            <dd class="font-medium">{{ config('educationhub.whatsapp.driver') === 'fake' ? 'Practice mode (nothing is really sent)' : 'WhatsApp Web (Playwright)' }}</dd></div>
-                        <div class="flex justify-between gap-4 py-2.5"><dt class="text-muted">Browser profile</dt><dd class="font-medium">{{ $session->profile_name }}</dd></div>
-                    </dl>
-                    <p class="mt-4 flex gap-2 rounded-xl bg-primary-soft px-3.5 py-3 text-[13px] text-blue-800">
-                        <x-lucide-info class="mt-0.5 size-4 shrink-0" />
-                        Connect, Disconnect and Refresh Session are added in Phase 13–14, together with the WhatsApp Web worker. You will scan the QR code with your phone in a normal WhatsApp Web window.
-                    </p>
                     @break
 
                 {{-- ================= Sending ================= --}}
@@ -279,6 +336,20 @@
             @endif
         </x-ui.card>
     </div>
+
+    {{-- Disconnect confirmation --}}
+    <x-ui.modal :name="\App\Livewire\Settings\Index::DISCONNECT_MODAL" title="Disconnect WhatsApp?">
+        <div class="space-y-3 text-sm">
+            <p>This logs WhatsApp Web out on this computer. To send again you will need to scan the QR code with your phone.</p>
+            @if ($section === 'whatsapp' && ($sending = $this->health['sending']))
+                <p class="rounded-xl bg-warning-soft px-3.5 py-2.5 text-amber-900">“{{ $sending->title }}” is sending right now. It will be <b>paused</b>; you can resume it after connecting again.</p>
+            @endif
+        </div>
+        <x-slot:footer>
+            <x-ui.button variant="secondary" x-on:click="open = false">Cancel</x-ui.button>
+            <x-ui.button variant="danger" icon="log-out" wire:click="disconnectWhatsApp" wire:loading.attr="disabled" wire:target="disconnectWhatsApp">Disconnect</x-ui.button>
+        </x-slot:footer>
+    </x-ui.modal>
 
     {{-- Reset confirmation --}}
     <x-ui.modal :name="\App\Livewire\Settings\Index::RESET_MODAL" title="Reset the application?">

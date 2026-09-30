@@ -6,6 +6,7 @@ use App\Enums\SendErrorType;
 use App\Enums\WhatsAppConnectionStatus;
 use App\Models\Group;
 use App\Models\Media;
+use Illuminate\Support\Facades\Cache;
 
 /**
  * Pretends to send. Nothing leaves this computer. Used by tests and while the
@@ -14,13 +15,16 @@ use App\Models\Media;
  * Failures can be simulated per group name through config
  * (educationhub.whatsapp.fake.failures, e.g. ['Police Batch 04' => 'NOT_MEMBER']),
  * or in tests with failFor() / disconnect().
+ *
+ * Connect/Disconnect are simulated instantly (no QR code). The state is kept in the
+ * cache so the web app and the queue worker (separate processes) agree on it.
  */
 class FakeWhatsAppService implements WhatsAppServiceInterface
 {
+    private const STATE_KEY = 'whatsapp.fake.connected';
+
     /** @var array<string, SendErrorType> group name => error */
     private array $failures = [];
-
-    private bool $connected = true;
 
     /** @var array<int, array{group: string, message: string, attachment: ?string}> */
     public array $sent = [];
@@ -39,16 +43,21 @@ class FakeWhatsAppService implements WhatsAppServiceInterface
         return $this;
     }
 
-    public function disconnect(): static
+    public function connect(): WhatsAppConnectionStatus
     {
-        $this->connected = false;
+        Cache::forever(self::STATE_KEY, true);
 
-        return $this;
+        return WhatsAppConnectionStatus::Connected;
+    }
+
+    public function disconnect(): void
+    {
+        Cache::forever(self::STATE_KEY, false);
     }
 
     public function status(): WhatsAppConnectionStatus
     {
-        return $this->connected ? WhatsAppConnectionStatus::Connected : WhatsAppConnectionStatus::Disconnected;
+        return $this->connected() ? WhatsAppConnectionStatus::Connected : WhatsAppConnectionStatus::Disconnected;
     }
 
     public function sendToGroup(Group $group, string $message, ?Media $attachment = null): SendResult
@@ -57,7 +66,7 @@ class FakeWhatsAppService implements WhatsAppServiceInterface
             usleep($delay * 1000);
         }
 
-        if (! $this->connected) {
+        if (! $this->connected()) {
             return SendResult::failed($group->name, SendErrorType::WhatsAppDisconnected);
         }
 
@@ -68,5 +77,10 @@ class FakeWhatsAppService implements WhatsAppServiceInterface
         $this->sent[] = ['group' => $group->name, 'message' => $message, 'attachment' => $attachment?->original_name];
 
         return SendResult::sent($group->name);
+    }
+
+    private function connected(): bool
+    {
+        return (bool) Cache::get(self::STATE_KEY, true);
     }
 }

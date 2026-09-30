@@ -72,6 +72,14 @@ return [
 
     'whatsapp' => [
         'driver' => env('WHATSAPP_DRIVER', 'fake'),
+        // Local Playwright worker (Phase 14). It only listens on 127.0.0.1 and requires the token.
+        'worker' => [
+            'url' => env('WHATSAPP_WORKER_URL', 'http://127.0.0.1:3010'),
+            'token' => env('WHATSAPP_WORKER_TOKEN'),
+            // The worker reports "I am running" this often; after `offline_after` seconds of silence it counts as stopped.
+            'heartbeat_seconds' => 15,
+            'offline_after' => 45,
+        ],
         // Automatic tries for temporary problems (timeouts, upload errors) before a group is marked failed.
         'max_attempts' => 3,
         // Wait before retrying a temporary problem, in seconds.

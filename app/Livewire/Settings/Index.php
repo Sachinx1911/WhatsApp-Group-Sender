@@ -5,9 +5,13 @@ namespace App\Livewire\Settings;
 use App\Actions\Data\ClearTemporaryFiles;
 use App\Actions\Data\ExportAllData;
 use App\Actions\Data\ResetApplication;
+use App\Enums\CampaignStatus;
+use App\Models\Campaign;
 use App\Models\Category;
 use App\Models\Group;
 use App\Models\WhatsAppSession;
+use App\Services\WhatsApp\WhatsAppSessionManager;
+use App\Services\WhatsApp\WorkerUnavailableException;
 use App\Support\Settings;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Number;
@@ -23,6 +27,8 @@ use RuntimeException;
 class Index extends Component
 {
     public const RESET_MODAL = 'confirm-reset-application';
+
+    public const DISCONNECT_MODAL = 'confirm-disconnect-whatsapp';
 
     /** section => [label, icon, description] */
     public const SECTIONS = [
@@ -204,6 +210,74 @@ class Index extends Component
     public function categories()
     {
         return Category::ordered()->get();
+    }
+
+    // ---- WhatsApp connection ------------------------------------------------
+
+    public function connectWhatsApp(WhatsAppSessionManager $sessions): void
+    {
+        try {
+            $session = $sessions->connect();
+        } catch (WorkerUnavailableException $e) {
+            $this->dispatch('toast', type: 'error', message: $e->getMessage());
+
+            return;
+        } finally {
+            unset($this->session);
+            $this->dispatch('whatsapp-status-changed');
+        }
+
+        $this->dispatch('toast', ...match (true) {
+            $session->isConnected() => ['type' => 'success', 'message' => 'WhatsApp connected'],
+            default => ['type' => 'info', 'message' => 'WhatsApp Web is opening. Scan the QR code with your phone.'],
+        });
+    }
+
+    public function disconnectWhatsApp(WhatsAppSessionManager $sessions): void
+    {
+        $this->dispatch('close-modal', self::DISCONNECT_MODAL);
+
+        try {
+            $sessions->disconnect();
+        } catch (WorkerUnavailableException $e) {
+            $this->dispatch('toast', type: 'error', message: $e->getMessage());
+
+            return;
+        } finally {
+            unset($this->session);
+            $this->dispatch('whatsapp-status-changed');
+        }
+
+        $this->dispatch('toast', type: 'success', message: 'WhatsApp disconnected');
+    }
+
+    public function refreshSession(WhatsAppSessionManager $sessions): void
+    {
+        try {
+            $session = $sessions->refresh();
+        } catch (WorkerUnavailableException $e) {
+            $this->dispatch('toast', type: 'error', message: $e->getMessage());
+
+            return;
+        } finally {
+            unset($this->session);
+            $this->dispatch('whatsapp-status-changed');
+        }
+
+        $this->dispatch('toast', type: 'success', message: 'Status refreshed: '.$session->status->label());
+    }
+
+    /** Health of the two background programs, for the WhatsApp section. */
+    #[Computed]
+    public function health(): array
+    {
+        $sessions = app(WhatsAppSessionManager::class);
+
+        return [
+            'worker' => $sessions->workerRunning(),
+            'queueStalled' => $sessions->queueStalled(),
+            'sending' => Campaign::where('status', CampaignStatus::Sending)->first(),
+        ];
     }
 
     #[Computed]

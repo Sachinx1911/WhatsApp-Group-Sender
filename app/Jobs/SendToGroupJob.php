@@ -5,11 +5,13 @@ namespace App\Jobs;
 use App\Enums\CampaignStatus;
 use App\Enums\SendErrorType;
 use App\Enums\SendStatus;
+use App\Enums\WhatsAppConnectionStatus;
 use App\Models\CampaignGroup;
 use App\Models\SendLog;
 use App\Services\Campaigns\CampaignRunner;
 use App\Services\WhatsApp\SendResult;
 use App\Services\WhatsApp\WhatsAppServiceInterface;
+use App\Services\WhatsApp\WhatsAppSessionManager;
 use App\Support\Settings;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
@@ -39,7 +41,7 @@ class SendToGroupJob implements ShouldQueue
         $this->onQueue('whatsapp');
     }
 
-    public function handle(WhatsAppServiceInterface $whatsapp, CampaignRunner $runner): void
+    public function handle(WhatsAppServiceInterface $whatsapp, CampaignRunner $runner, WhatsAppSessionManager $sessions): void
     {
         // The worker is long-running: pick up changes made in Settings (delay, daily limit...).
         Settings::apply();
@@ -78,10 +80,15 @@ class SendToGroupJob implements ShouldQueue
             $result = SendResult::failed($row->group_name, SendErrorType::BrowserError, technical: $e->getMessage());
         }
 
-        $this->record($row, $result, $runner);
+        // Keep the header badge honest: a send tells us whether WhatsApp Web is really connected.
+        if ($result->success && ! $sessions->session()->isConnected()) {
+            $sessions->record(WhatsAppConnectionStatus::Connected, 'send');
+        }
+
+        $this->record($row, $result, $runner, $sessions);
     }
 
-    private function record(CampaignGroup $row, SendResult $result, CampaignRunner $runner): void
+    private function record(CampaignGroup $row, SendResult $result, CampaignRunner $runner, WhatsAppSessionManager $sessions): void
     {
         $campaign = $row->campaign;
 
@@ -106,6 +113,11 @@ class SendToGroupJob implements ShouldQueue
         // Connection problems: nothing is wrong with this group. Put it back and pause everything.
         if ($type->pausesCampaign()) {
             $row->update(['status' => SendStatus::Pending, 'attempts' => max(0, $row->attempts - 1)]);
+
+            if ($type === SendErrorType::WhatsAppDisconnected) {
+                $sessions->record(WhatsAppConnectionStatus::Disconnected, 'send', $result->technicalDetails); // pauses + notifies
+            }
+
             $runner->pause($campaign, $type);
 
             return;

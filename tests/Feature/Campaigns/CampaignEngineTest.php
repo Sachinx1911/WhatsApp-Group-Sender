@@ -174,6 +174,7 @@ class CampaignEngineTest extends TestCase
         $this->assertTrue(AppNotification::where('type', 'whatsapp_disconnected')->exists());
 
         $reconnected = new FakeWhatsAppService;
+        $reconnected->connect();
         $this->app->instance(WhatsAppServiceInterface::class, $reconnected);
         app(CampaignRunner::class)->resume($campaign);
 
