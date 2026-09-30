@@ -229,8 +229,22 @@ class Index extends Component
             return;
         }
 
-        $existingNames = Group::pluck('name');
-        $newNames = collect($chatNames)->map(fn ($n) => trim((string) $n))->filter()->unique()->diff($existingNames)->values();
+        $incoming = collect($chatNames)
+            ->map(fn ($n) => trim((string) $n))
+            ->filter()
+            // Two chats can differ only by case and still collide in the database.
+            ->unique(fn (string $name) => mb_strtolower($name))
+            ->values();
+
+        // Let the database say what already exists. groups.name is utf8mb4_unicode_ci, so
+        // "Bajaj Direct Offers" and "Bajaj direct offers" are the same row to MySQL while
+        // PHP sees two different strings — comparing in PHP let duplicates through and the
+        // insert then failed with a unique constraint violation.
+        $existing = Group::whereIn('name', $incoming)->pluck('name')
+            ->map(fn (string $name) => mb_strtolower($name))
+            ->all();
+
+        $newNames = $incoming->reject(fn (string $name) => in_array(mb_strtolower($name), $existing, true))->values();
 
         if ($newNames->isEmpty()) {
             $this->dispatch('toast', type: 'info', message: 'No new chats found. Everything WhatsApp shows is already in Group Manager.');
@@ -240,18 +254,34 @@ class Index extends Component
 
         $defaultCategoryId = config('educationhub.groups.default_category_id') ?? Category::ordered()->value('id');
 
-        DB::transaction(function () use ($newNames, $defaultCategoryId) {
-            foreach ($newNames as $name) {
-                Group::create([
-                    'name' => $name,
-                    'category_id' => $defaultCategoryId,
-                    'status' => GroupStatus::Inactive,
-                ]);
-            }
-        });
+        if (! $defaultCategoryId) {
+            $this->dispatch('toast', type: 'error', message: 'Create a category first: imported chats need one.');
+
+            return;
+        }
+
+        $now = now();
+
+        // insertOrIgnore, not create(): the collation can still consider two names equal in
+        // ways PHP cannot predict (accents, for one). Skipping a colliding row is right here
+        // — one odd chat name must not fail the whole sync with a 500.
+        $inserted = Group::insertOrIgnore($newNames->map(fn (string $name) => [
+            'name' => $name,
+            'category_id' => $defaultCategoryId,
+            'status' => GroupStatus::Inactive->value,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ])->all());
 
         unset($this->stats);
-        $this->dispatch('toast', type: 'success', message: $newNames->count().' new '.str('chat')->plural($newNames->count())
+
+        if ($inserted === 0) {
+            $this->dispatch('toast', type: 'info', message: 'No new chats found. Everything WhatsApp shows is already in Group Manager.');
+
+            return;
+        }
+
+        $this->dispatch('toast', type: 'success', message: $inserted.' new '.str('chat')->plural($inserted)
             .' added as inactive. This list may include personal chats too — review and activate only real groups before sending.');
     }
 

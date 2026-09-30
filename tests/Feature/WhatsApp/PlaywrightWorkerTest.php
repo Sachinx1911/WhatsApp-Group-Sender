@@ -191,6 +191,54 @@ class PlaywrightWorkerTest extends TestCase
         }
     }
 
+    /**
+     * groups.name is utf8mb4_unicode_ci, so names that differ only by case are the same row
+     * to MySQL. Comparing them in PHP let both through and the insert died with a unique
+     * constraint violation, which surfaced as a 500 on the Sync button.
+     */
+    public function test_sync_treats_names_differing_only_by_case_as_the_same_chat(): void
+    {
+        config(['educationhub.whatsapp.driver' => 'playwright']);
+        $category = Category::factory()->create();
+        config(['educationhub.groups.default_category_id' => $category->id]);
+
+        Http::fake([self::URL.'/groups' => Http::response([
+            'success' => true,
+            // WhatsApp reporting the same chat twice under different casing.
+            'groups' => ['Bajaj Direct Offers', 'Bajaj direct offers', 'BAJAJ DIRECT OFFERS'],
+        ])]);
+
+        $this->app->instance(WhatsAppServiceInterface::class, $this->service());
+        $this->connectedSession();
+
+        Livewire::actingAs(User::factory()->create())
+            ->test(GroupIndex::class)
+            ->call('syncFromWhatsApp');
+
+        $this->assertSame(1, Group::count(), 'the three casings are one chat, so one group');
+    }
+
+    public function test_sync_reports_nothing_new_when_every_chat_is_already_known(): void
+    {
+        config(['educationhub.whatsapp.driver' => 'playwright']);
+        $category = Category::factory()->create();
+        config(['educationhub.groups.default_category_id' => $category->id]);
+
+        Group::factory()->create(['name' => 'Group 1']);
+
+        Http::fake([self::URL.'/groups' => Http::response(['success' => true, 'groups' => ['Group 1']])]);
+
+        $this->app->instance(WhatsAppServiceInterface::class, $this->service());
+        $this->connectedSession();
+
+        Livewire::actingAs(User::factory()->create())
+            ->test(GroupIndex::class)
+            ->call('syncFromWhatsApp')
+            ->assertDispatched('toast', type: 'info');
+
+        $this->assertSame(1, Group::count());
+    }
+
     public function test_sync_is_refused_when_whatsapp_is_not_connected(): void
     {
         config(['educationhub.whatsapp.driver' => 'playwright']);
