@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AutoLogin;
 use App\Http\Middleware\VerifyWorkerToken;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -17,7 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
             ->group(base_path('routes/internal.php')),
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->web(append: [AutoLogin::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         //
