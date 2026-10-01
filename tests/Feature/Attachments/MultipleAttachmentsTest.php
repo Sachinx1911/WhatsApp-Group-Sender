@@ -181,6 +181,29 @@ class MultipleAttachmentsTest extends TestCase
             ->assertSet('form.attachment_ids', $files->pluck('id')->all());
     }
 
+    /** The admin has to be able to see what they attached before sending it. */
+    public function test_the_preview_and_review_name_every_attached_file(): void
+    {
+        $group = Group::factory()->for($this->category)->create();
+        $pdfs = collect([
+            Media::factory()->create(['original_name' => 'Paper_One.pdf', 'type' => 'pdf', 'mime_type' => 'application/pdf']),
+            Media::factory()->create(['original_name' => 'Paper_Two.pdf', 'type' => 'pdf', 'mime_type' => 'application/pdf']),
+        ]);
+
+        Livewire::test(Compose::class)
+            ->set('form.message', 'two papers')
+            ->set('form.attachment_ids', $pdfs->pluck('id')->all())
+            ->set('form.groups', [(string) $group->id])
+            // Listed in the attachments card and the WhatsApp-style preview.
+            ->assertSee('Paper_One.pdf')
+            ->assertSee('Paper_Two.pdf')
+            ->call('review')
+            ->assertHasNoErrors()
+            // Still both named once the review dialog is open.
+            ->assertSee('Paper_One.pdf')
+            ->assertSee('Paper_Two.pdf');
+    }
+
     public function test_more_than_the_limit_is_refused(): void
     {
         $group = Group::factory()->for($this->category)->create();

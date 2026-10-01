@@ -211,7 +211,7 @@
         {{-- Message --}}
         <div class="space-y-6">
             <x-ui.card title="Message">
-                <x-ui.whatsapp-preview :text="$campaign->message" :attachment="$campaign->attachment" />
+                <x-ui.whatsapp-preview :text="$campaign->message" :attachments="$campaign->attachments" />
                 @if (! $campaign->attachment && $campaign->attachment_name)
                     <p class="mt-2 flex items-center gap-1.5 text-xs text-muted"><x-lucide-paperclip class="size-3.5" /> {{ $campaign->attachment_name }} (deleted from the library)</p>
                 @endif

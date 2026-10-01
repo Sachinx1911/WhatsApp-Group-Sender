@@ -131,7 +131,7 @@
 
             {{-- Preview --}}
             <x-ui.card title="Message Preview" subtitle="How the message will look in WhatsApp">
-                <x-ui.whatsapp-preview live="preview" :attachment="$attachment" :footer="$footer" class="min-h-[160px]" />
+                <x-ui.whatsapp-preview live="preview" :attachments="$this->attachments" :footer="$footer" class="min-h-[160px]" />
             </x-ui.card>
         </div>
 
@@ -258,7 +258,7 @@
         <div class="grid gap-5 md:grid-cols-[minmax(0,1fr)_280px]">
             <div>
                 <p class="mb-1.5 text-[13px] font-medium">Message</p>
-                <x-ui.whatsapp-preview :text="$form->message" :attachment="$attachment" :footer="$footer" class="max-h-[420px] overflow-y-auto" />
+                <x-ui.whatsapp-preview :text="$form->message" :attachments="$this->attachments" :footer="$footer" class="max-h-[420px] overflow-y-auto" />
             </div>
             <div class="space-y-4">
                 <dl class="divide-y divide-line rounded-xl border border-line text-[13px]">

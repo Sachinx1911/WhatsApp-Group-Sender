@@ -5,28 +5,44 @@
 --}}
 @props([
     'text' => null,
-    'live' => null,        // Alpine expression returning formatted HTML
-    'attachment' => null,  // App\Models\Media|null
-    'footer' => null,      // optional footer/signature appended below the message
+    'live' => null,         // Alpine expression returning formatted HTML
+    'attachment' => null,   // App\Models\Media|null — a single file
+    'attachments' => null,  // iterable of App\Models\Media — several files
+    'footer' => null,       // optional footer/signature appended below the message
 ])
+
+@php
+    // Accept either prop; "attachments" wins when both are given.
+    $files = collect($attachments ?? ($attachment ? [$attachment] : []))->filter()->values();
+    $images = $files->filter(fn ($file) => $file->isImage())->values();
+    $documents = $files->reject(fn ($file) => $file->isImage())->values();
+@endphp
 
 <div {{ $attributes->class('wa-chat rounded-2xl p-4') }}>
     <div class="ml-auto w-fit max-w-[92%] rounded-xl rounded-tr-sm bg-[#d9fdd3] p-1 shadow-[0_1px_0.5px_rgb(0_0_0/0.13)]">
-        @if ($attachment)
-            @if ($attachment->isImage())
-                {{-- Full image (not the square thumbnail) so the preview keeps the real proportions, as WhatsApp does. --}}
-                <img src="{{ route('media.file', $attachment) }}" alt="{{ $attachment->original_name }}"
-                    class="h-auto max-h-80 w-full rounded-lg object-cover">
-            @else
-                <div class="flex items-center gap-3 rounded-lg bg-[#c9f0c0]/70 px-3 py-2.5">
-                    <span class="grid h-10 w-8 shrink-0 place-items-center rounded bg-red-500 text-[9px] font-bold text-white">PDF</span>
-                    <span class="min-w-0">
-                        <span class="block truncate text-[13px] font-medium text-[#111b21]">{{ $attachment->original_name }}</span>
-                        <span class="block text-[11px] text-[#667781]">PDF · {{ $attachment->humanSize() }}</span>
-                    </span>
-                </div>
-            @endif
+        @if ($images->isNotEmpty())
+            {{-- WhatsApp groups several photos into a grid; one photo fills the bubble. --}}
+            <div @class([
+                'gap-0.5' => $images->count() > 1,
+                'grid grid-cols-2' => $images->count() > 1,
+            ])>
+                @foreach ($images as $image)
+                    {{-- Full image (not the square thumbnail) so a single photo keeps its real proportions, as WhatsApp does. --}}
+                    <img src="{{ route('media.file', $image) }}" alt="{{ $image->original_name }}"
+                        class="h-auto w-full rounded-lg object-cover {{ $images->count() > 1 ? 'aspect-square' : 'max-h-80' }}">
+                @endforeach
+            </div>
         @endif
+
+        @foreach ($documents as $document)
+            <div class="mt-0.5 flex items-center gap-3 rounded-lg bg-[#c9f0c0]/70 px-3 py-2.5">
+                <span class="grid h-10 w-8 shrink-0 place-items-center rounded bg-red-500 text-[9px] font-bold text-white">PDF</span>
+                <span class="min-w-0">
+                    <span class="block truncate text-[13px] font-medium text-[#111b21]">{{ $document->original_name }}</span>
+                    <span class="block text-[11px] text-[#667781]">PDF · {{ $document->humanSize() }}</span>
+                </span>
+            </div>
+        @endforeach
 
         <div class="px-2 pb-1 pt-1.5">
             @if ($live)

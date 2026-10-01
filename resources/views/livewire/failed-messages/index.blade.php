@@ -182,7 +182,7 @@
 
                 {{-- Message --}}
                 <div x-show="tab === 'message'" x-cloak>
-                    <x-ui.whatsapp-preview :text="$active->campaign->message" :attachment="$active->campaign->attachment" />
+                    <x-ui.whatsapp-preview :text="$active->campaign->message" :attachments="$active->campaign->attachments" />
                     <a href="{{ route('campaigns.show', $active->campaign) }}" class="mt-3 inline-flex items-center gap-1 text-[13px] font-medium text-primary hover:underline">
                         Open campaign <x-lucide-arrow-right class="size-3.5" />
                     </a>

@@ -131,7 +131,7 @@
             {{-- Live preview --}}
             <div class="lg:sticky lg:top-0 lg:self-start">
                 <p class="mb-1.5 text-[13px] font-medium">Preview</p>
-                <x-ui.whatsapp-preview live="preview" :attachment="$this->attachment" class="min-h-[240px]" />
+                <x-ui.whatsapp-preview live="preview" :attachments="$this->attachments" class="min-h-[240px]" />
                 <p class="mt-2 text-xs text-muted">This is how the message looks in WhatsApp. Formatting: *bold*, _italic_, ~strike~, ```monospace```.</p>
             </div>
         </div>
