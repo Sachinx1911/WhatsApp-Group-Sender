@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const os = require('node:os');
 const sel = require('./selectors');
 
 /** Select-all is Cmd+A on macOS and Ctrl+A elsewhere; using the wrong one silently types over nothing. */
@@ -428,23 +429,67 @@ function assertAllowedAttachment(attachmentPath) {
   return resolved;
 }
 
+/**
+ * WhatsApp shows recipients the name of the file as it is on disk, and the Media Library
+ * deliberately stores everything under a random name so a crafted name cannot escape the
+ * folder. Sending straight from storage therefore delivers "T882qr...pdf" instead of
+ * "Police_Bharti_Practice_Paper_05.pdf".
+ *
+ * So copy each file into a throwaway folder under its original name first. The name is
+ * reduced to a plain filename before use: it comes from the database and must never be
+ * able to walk out of the staging folder.
+ */
+function stageForUpload(files) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'edu-hub-send-'));
+
+  const paths = files.map((file, i) => {
+    const safeName = path.basename(String(file.name || '')).replace(/[/\\]/g, '') || `attachment-${i + 1}`;
+    const staged = path.join(dir, safeName);
+
+    fs.copyFileSync(file.path, staged);
+
+    return staged;
+  });
+
+  return { dir, paths };
+}
+
+/** Remove a staging folder; never let cleanup trouble fail a send that already went out. */
+function cleanupStaging(dir) {
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+  } catch {
+    // The OS clears its temp folder anyway.
+  }
+}
+
 /** Full send flow for one group: open chat, send, confirm. Never throws for expected errors. */
-async function sendToGroup(page, { group, message, attachmentPath, attachmentPaths }) {
+async function sendToGroup(page, { group, message, attachmentPath, attachmentPaths, attachments }) {
+  let staging = null;
+
   try {
     if ((await detectState(page)) !== STATE.CONNECTED) {
       throw new WhatsAppError('WHATSAPP_DISCONNECTED', 'WhatsApp is not connected.');
     }
 
-    // attachmentPaths is the list; attachmentPath is the older single-file field.
-    const files = (Array.isArray(attachmentPaths) && attachmentPaths.length
-      ? attachmentPaths
-      : (attachmentPath ? [attachmentPath] : [])
-    ).map((p) => assertAllowedAttachment(p));
+    // Newest first: attachments carries {path, name}. attachmentPaths and attachmentPath
+    // are the older shapes, kept so a mismatched app version still sends.
+    const requested = Array.isArray(attachments) && attachments.length
+      ? attachments
+      : (Array.isArray(attachmentPaths) && attachmentPaths.length
+        ? attachmentPaths.map((p) => ({ path: p, name: null }))
+        : (attachmentPath ? [{ path: attachmentPath, name: null }] : []));
+
+    const files = requested.map((file) => ({
+      path: assertAllowedAttachment(file.path),
+      name: file.name || path.basename(String(file.path)),
+    }));
 
     await openGroupChat(page, group);
 
     if (files.length) {
-      await sendAttachmentMessage(page, message, files);
+      staging = stageForUpload(files);
+      await sendAttachmentMessage(page, message, staging.paths);
     } else {
       await sendTextMessage(page, message);
     }
@@ -460,6 +505,11 @@ async function sendToGroup(page, { group, message, attachmentPath, attachmentPat
     }
 
     return { success: false, group, error_type: 'UNKNOWN_ERROR', error_message: 'An unknown error occurred.', technical: String(error && error.stack || error) };
+  } finally {
+    // The staged copies exist only for the upload.
+    if (staging) {
+      cleanupStaging(staging.dir);
+    }
   }
 }
 

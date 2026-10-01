@@ -64,6 +64,13 @@ class PlaywrightWhatsAppService implements WhatsAppServiceInterface
 
         $paths = $files->map(fn (Media $media) => Storage::disk('local')->path($media->path))->all();
 
+        // Send the original name too: the library stores files under a random name, and
+        // without this recipients would see that random name on the file.
+        $withNames = $files->map(fn (Media $media) => [
+            'path' => Storage::disk('local')->path($media->path),
+            'name' => $media->original_name,
+        ])->all();
+
         try {
             $response = $this->request(timeout: self::SEND_TIMEOUT)->post('/send', array_filter([
                 'group' => $group->name,
@@ -72,6 +79,7 @@ class PlaywrightWhatsAppService implements WhatsAppServiceInterface
                 // working; attachment_paths carries the whole list.
                 'attachment_path' => $paths[0] ?? null,
                 'attachment_paths' => $paths,
+                'attachments' => $withNames,
             ], fn ($value) => $value !== null && $value !== '' && $value !== []));
         } catch (ConnectionException $e) {
             // A refused connection means no worker. A timeout means the worker took the
