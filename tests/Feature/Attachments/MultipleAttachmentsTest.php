@@ -204,6 +204,49 @@ class MultipleAttachmentsTest extends TestCase
             ->assertSee('Paper_Two.pdf');
     }
 
+    /**
+     * The real bug this caught: applyTemplate correctly filled form.attachment_ids with
+     * every file, but startSending still read the old singular $this->attachment property
+     * when building the campaign, so only the first file ever reached CreateCampaign.
+     */
+    public function test_sending_with_a_multi_attachment_template_keeps_every_file(): void
+    {
+        $group = Group::factory()->for($this->category)->create();
+        $files = Media::factory()->count(4)->create();
+
+        $template = MessageTemplate::factory()->create(['message' => 'Hello']);
+        $template->attachments()->sync(
+            $files->mapWithKeys(fn (Media $f, int $i) => [$f->id => ['position' => $i]])->all()
+        );
+
+        Livewire::test(Compose::class)
+            ->call('applyTemplate', $template->id)
+            ->assertSet('form.attachment_ids', $files->pluck('id')->all())
+            ->set('form.groups', [(string) $group->id])
+            ->call('startSending');
+
+        $campaign = Campaign::latest('id')->first();
+        $this->assertSame(
+            $files->pluck('id')->all(),
+            $campaign->attachments()->pluck('media.id')->all(),
+            'every file from the template must reach the campaign, not just the first',
+        );
+    }
+
+    public function test_send_test_also_keeps_every_attachment(): void
+    {
+        Group::factory()->for($this->category)->create(['name' => 'Education Hub Test Group']);
+        $files = Media::factory()->count(3)->create();
+
+        Livewire::test(Compose::class)
+            ->set('form.message', 'test send')
+            ->set('form.attachment_ids', $files->pluck('id')->all())
+            ->call('startTest');
+
+        $campaign = Campaign::latest('id')->first();
+        $this->assertSame($files->pluck('id')->all(), $campaign->attachments()->pluck('media.id')->all());
+    }
+
     public function test_more_than_the_limit_is_refused(): void
     {
         $group = Group::factory()->for($this->category)->create();

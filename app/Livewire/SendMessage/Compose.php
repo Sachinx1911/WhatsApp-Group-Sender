@@ -298,7 +298,7 @@ class Compose extends Component
 
         $campaign = $create->handle(
             message: $this->form->finalMessage(),
-            attachment: $this->attachment,
+            attachment: $this->attachments,
             groupIds: $this->form->groups,
             template: $this->form->template_id ? MessageTemplate::find($this->form->template_id) : null,
             user: auth()->user(),
@@ -324,7 +324,7 @@ class Compose extends Component
 
         $campaign = $create->handle(
             message: $this->form->finalMessage(),
-            attachment: $this->attachment,
+            attachment: $this->attachments,
             groupIds: [$this->testGroup->id],
             isTest: true,
             user: auth()->user(),

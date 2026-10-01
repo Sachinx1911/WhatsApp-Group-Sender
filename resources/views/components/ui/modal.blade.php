@@ -18,9 +18,9 @@
     <div x-show="open" x-transition.opacity class="absolute inset-0 bg-navy/50" x-on:click="open = false"></div>
 
     <div x-show="open" x-transition x-trap.noscroll="open"
-        {{ $attributes->class("relative w-full {$maxWidth} rounded-2xl bg-white shadow-xl") }}>
+        {{ $attributes->class("relative flex max-h-[calc(100dvh-2rem)] w-full {$maxWidth} flex-col rounded-2xl bg-white shadow-xl") }}>
         @if ($title)
-            <header class="flex items-center justify-between border-b border-line px-5 py-4">
+            <header class="flex shrink-0 items-center justify-between border-b border-line px-5 py-4">
                 <h2 class="text-base font-semibold">{{ $title }}</h2>
                 <button type="button" x-on:click="open = false" class="rounded-lg p-1 text-muted hover:bg-canvas hover:text-ink" aria-label="Close">
                     <x-lucide-x class="size-5" />
@@ -28,10 +28,10 @@
             </header>
         @endif
 
-        <div class="p-5">{{ $slot }}</div>
+        <div class="min-h-0 flex-1 overflow-y-auto p-5">{{ $slot }}</div>
 
         @isset($footer)
-            <footer class="flex flex-wrap justify-end gap-2 border-t border-line px-5 py-4">{{ $footer }}</footer>
+            <footer class="flex shrink-0 flex-wrap justify-end gap-2 border-t border-line px-5 py-4">{{ $footer }}</footer>
         @endisset
     </div>
 </div>
