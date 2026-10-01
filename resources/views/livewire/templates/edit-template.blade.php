@@ -63,32 +63,42 @@
                     @error('form.message') <p class="mt-1.5 text-xs text-danger">{{ $message }}</p> @enderror
                 </div>
 
-                {{-- Default attachment --}}
+                {{-- Default attachments --}}
                 <div>
-                    <p class="mb-1.5 text-[13px] font-medium">Default attachment <span class="font-normal text-muted">(optional)</span></p>
-                    @if ($this->attachment)
-                        <div class="flex items-center gap-3 rounded-xl border border-line px-3 py-2.5">
-                            @if ($this->attachment->isImage())
-                                <img src="{{ route('media.thumbnail', $this->attachment) }}" alt="" class="size-10 rounded-lg object-cover">
-                            @else
-                                <span class="grid h-10 w-9 place-items-center rounded-md bg-red-500 text-[10px] font-bold text-white">PDF</span>
-                            @endif
-                            <span class="min-w-0 flex-1">
-                                <span class="block truncate text-[13px] font-medium">{{ $this->attachment->original_name }}</span>
-                                <span class="block text-xs text-muted">{{ $this->attachment->type->label() }} · {{ $this->attachment->humanSize() }}</span>
-                            </span>
-                            <x-ui.button variant="ghost" size="sm" x-on:click="$dispatch('pick-media', { context: '{{ \App\Livewire\Templates\EditTemplate::PICKER_CONTEXT }}' })">Change</x-ui.button>
-                            <button type="button" wire:click="removeAttachment" class="rounded-lg p-1.5 text-muted hover:bg-danger-soft hover:text-danger" aria-label="Remove attachment">
-                                <x-lucide-x class="size-4" />
+                    <p class="mb-1.5 text-[13px] font-medium">Default attachments <span class="font-normal text-muted">(optional, up to {{ \App\Livewire\Forms\TemplateForm::MAX_ATTACHMENTS }})</span></p>
+                    @if ($this->attachments->isNotEmpty())
+                        <ul class="space-y-2">
+                            @foreach ($this->attachments as $file)
+                                <li wire:key="tpl-file-{{ $file->id }}" class="flex items-center gap-3 rounded-xl border border-line px-3 py-2.5">
+                                    @if ($file->isImage())
+                                        <img src="{{ route('media.thumbnail', $file) }}" alt="" class="size-10 rounded-lg object-cover">
+                                    @else
+                                        <span class="grid h-10 w-9 place-items-center rounded-md bg-red-500 text-[10px] font-bold text-white">PDF</span>
+                                    @endif
+                                    <span class="min-w-0 flex-1">
+                                        <span class="block truncate text-[13px] font-medium">{{ $file->original_name }}</span>
+                                        <span class="block text-xs text-muted">{{ $file->type->label() }} · {{ $file->humanSize() }}</span>
+                                    </span>
+                                    <button type="button" wire:click="removeAttachment({{ $file->id }})" class="rounded-lg p-1.5 text-muted hover:bg-danger-soft hover:text-danger" aria-label="Remove {{ $file->original_name }}">
+                                        <x-lucide-x class="size-4" />
+                                    </button>
+                                </li>
+                            @endforeach
+                        </ul>
+                        @if ($this->attachments->count() < \App\Livewire\Forms\TemplateForm::MAX_ATTACHMENTS)
+                            <button type="button" x-on:click="$dispatch('pick-media', { context: '{{ \App\Livewire\Templates\EditTemplate::PICKER_CONTEXT }}' })"
+                                class="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line px-4 py-2.5 text-[13px] text-muted transition hover:border-primary hover:text-primary">
+                                <x-lucide-plus class="size-4" /> Add another image or PDF
                             </button>
-                        </div>
+                        @endif
                     @else
                         <button type="button" x-on:click="$dispatch('pick-media', { context: '{{ \App\Livewire\Templates\EditTemplate::PICKER_CONTEXT }}' })"
                             class="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-line px-4 py-3 text-[13px] text-muted transition hover:border-primary hover:text-primary">
-                            <x-lucide-paperclip class="size-4" /> Choose an image or PDF from the Media Library
+                            <x-lucide-paperclip class="size-4" /> Choose images or PDFs from the Media Library
                         </button>
                     @endif
                     @error('form.attachment_id') <p class="mt-1.5 text-xs text-danger">{{ $message }}</p> @enderror
+                    @error('form.attachment_ids') <p class="mt-1.5 text-xs text-danger">{{ $message }}</p> @enderror
                 </div>
 
                 {{-- Tags --}}

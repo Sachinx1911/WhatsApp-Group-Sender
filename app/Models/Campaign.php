@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 #[Fillable([
     'title', 'message', 'attachment_id', 'attachment_name', 'is_test',
@@ -41,9 +42,32 @@ class Campaign extends Model
         ];
     }
 
+    /**
+     * The first attachment. Kept so screens that show one file keep working; the full
+     * list lives in attachments().
+     */
     public function attachment(): BelongsTo
     {
         return $this->belongsTo(Media::class, 'attachment_id');
+    }
+
+    /**
+     * Every file this campaign was sent with. The pivot snapshots each original name, so
+     * history still reads correctly after the media is deleted from the library.
+     */
+    public function attachments(): BelongsToMany
+    {
+        return $this->belongsToMany(Media::class, 'campaign_media')
+            ->withPivot(['position', 'original_name'])
+            ->withTimestamps()
+            ->orderBy('campaign_media.position');
+    }
+
+    /** Attachment names for history, working even when the media rows are gone. */
+    public function attachmentNames(): array
+    {
+        return DB::table('campaign_media')->where('campaign_id', $this->id)
+            ->orderBy('position')->pluck('original_name')->all();
     }
 
     public function creator(): BelongsTo

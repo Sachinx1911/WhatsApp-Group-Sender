@@ -263,14 +263,32 @@ const IMAGE_FILE = /\.(png|jpe?g|gif|webp)$/i;
  * also holds hidden image inputs belonging to the group profile picture, and writing to
  * one of those changes the group's icon instead of sending anything.
  */
-async function sendAttachmentMessage(page, message, attachmentPath) {
+/**
+ * Split files into the batches WhatsApp can actually send together.
+ *
+ * Photos and documents come from different entries in the attach menu and get different
+ * preview screens, so they cannot share one message. Images go as a single album;
+ * documents go as their own batch. Mixed attachments therefore arrive as more than one
+ * WhatsApp message, with the caption on the first.
+ */
+function attachmentBatches(paths) {
+  const images = paths.filter((p) => IMAGE_FILE.test(p));
+  const documents = paths.filter((p) => !IMAGE_FILE.test(p));
+
+  return [
+    ...(images.length ? [{ kind: 'image', paths: images }] : []),
+    ...(documents.length ? [{ kind: 'document', paths: documents }] : []),
+  ];
+}
+
+/** Upload one batch of files of the same kind, with an optional caption, and send it. */
+async function sendAttachmentBatch(page, message, batch) {
   const attach = sel.attachButton(page);
   await attach.click({ timeout: 5000 }).catch(() => {
     throw new WhatsAppError('MEDIA_UPLOAD_FAILED', 'Could not open the attachment menu.');
   });
 
-  const isImage = IMAGE_FILE.test(attachmentPath);
-  const menuItem = isImage ? sel.attachPhotosMenuItem(page) : sel.attachDocumentMenuItem(page);
+  const menuItem = batch.kind === 'image' ? sel.attachPhotosMenuItem(page) : sel.attachDocumentMenuItem(page);
 
   let chooser;
   try {
@@ -278,7 +296,9 @@ async function sendAttachmentMessage(page, message, attachmentPath) {
       page.waitForEvent('filechooser', { timeout: 15000 }),
       menuItem.click({ timeout: 10000 }),
     ]);
-    await chooser.setFiles(attachmentPath);
+
+    // setFiles takes the whole batch; WhatsApp shows them as one preview to send together.
+    await chooser.setFiles(batch.paths);
   } catch (e) {
     await closePreview(page);
     throw new WhatsAppError('MEDIA_UPLOAD_FAILED', 'The attachment could not be uploaded.', String(e));
@@ -313,6 +333,22 @@ async function sendAttachmentMessage(page, message, attachmentPath) {
   });
 
   await confirmSent(page, before);
+}
+
+/**
+ * Send every attachment. The caption rides on the first batch only, so it is not repeated
+ * when images and documents have to go as separate messages.
+ */
+async function sendAttachmentMessage(page, message, attachmentPaths) {
+  const batches = attachmentBatches(attachmentPaths);
+
+  for (let i = 0; i < batches.length; i++) {
+    await sendAttachmentBatch(page, i === 0 ? message : '', batches[i]);
+
+    if (i < batches.length - 1) {
+      await sleep(1200);
+    }
+  }
 }
 
 /** Back out of a half-opened attachment preview so the next send starts from a clean chat. */
@@ -393,20 +429,22 @@ function assertAllowedAttachment(attachmentPath) {
 }
 
 /** Full send flow for one group: open chat, send, confirm. Never throws for expected errors. */
-async function sendToGroup(page, { group, message, attachmentPath }) {
+async function sendToGroup(page, { group, message, attachmentPath, attachmentPaths }) {
   try {
     if ((await detectState(page)) !== STATE.CONNECTED) {
       throw new WhatsAppError('WHATSAPP_DISCONNECTED', 'WhatsApp is not connected.');
     }
 
-    if (attachmentPath) {
-      attachmentPath = assertAllowedAttachment(attachmentPath);
-    }
+    // attachmentPaths is the list; attachmentPath is the older single-file field.
+    const files = (Array.isArray(attachmentPaths) && attachmentPaths.length
+      ? attachmentPaths
+      : (attachmentPath ? [attachmentPath] : [])
+    ).map((p) => assertAllowedAttachment(p));
 
     await openGroupChat(page, group);
 
-    if (attachmentPath) {
-      await sendAttachmentMessage(page, message, attachmentPath);
+    if (files.length) {
+      await sendAttachmentMessage(page, message, files);
     } else {
       await sendTextMessage(page, message);
     }

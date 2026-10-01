@@ -50,14 +50,27 @@ class EditTemplate extends Component
     #[On('media-picked')]
     public function attach(int $id, string $context): void
     {
-        if ($context === self::PICKER_CONTEXT) {
-            $this->form->attachment_id = Media::findOrFail($id)->id;
+        if ($context !== self::PICKER_CONTEXT) {
+            return;
         }
+
+        if (count($this->form->attachment_ids) >= TemplateForm::MAX_ATTACHMENTS) {
+            $this->dispatch('toast', type: 'warning', message: 'A template can hold at most '.TemplateForm::MAX_ATTACHMENTS.' files.');
+
+            return;
+        }
+
+        $this->form->addAttachment(Media::findOrFail($id)->id);
+        unset($this->attachments);
     }
 
-    public function removeAttachment(): void
+    public function removeAttachment(?int $id = null): void
     {
-        $this->form->attachment_id = null;
+        $id === null
+            ? $this->form->syncAttachments([])
+            : $this->form->removeAttachment($id);
+
+        unset($this->attachments);
     }
 
     public function save(): void
@@ -71,10 +84,23 @@ class EditTemplate extends Component
         $this->form->reset();
     }
 
+    /** Every file on this template, in order. */
+    #[Computed]
+    public function attachments()
+    {
+        if ($this->form->attachment_ids === []) {
+            return collect();
+        }
+
+        $byId = Media::whereKey($this->form->attachment_ids)->get()->keyBy('id');
+
+        return collect($this->form->attachment_ids)->map(fn (int $id) => $byId->get($id))->filter()->values();
+    }
+
     #[Computed]
     public function attachment(): ?Media
     {
-        return $this->form->attachment_id ? Media::find($this->form->attachment_id) : null;
+        return $this->attachments->first();
     }
 
     #[Computed]

@@ -50,7 +50,7 @@ class SendToGroupJob implements ShouldQueue
         // The worker is long-running: pick up changes made in Settings (delay, daily limit...).
         Settings::apply();
 
-        $row = CampaignGroup::with(['campaign.attachment', 'group'])->find($this->campaignGroupId);
+        $row = CampaignGroup::with(['campaign.attachment', 'campaign.attachments', 'group'])->find($this->campaignGroupId);
 
         // Paused / cancelled campaigns and rows already handled are skipped (resume queues them again).
         if (! $row || $row->status !== SendStatus::Pending || $row->campaign->status !== CampaignStatus::Sending) {
@@ -77,7 +77,9 @@ class SendToGroupJob implements ShouldQueue
 
         try {
             $result = $row->group
-                ? $whatsapp->sendToGroup($row->group, $campaign->message, $campaign->attachment)
+                // Campaigns saved before multiple attachments existed only have the single one.
+                ? $whatsapp->sendToGroup($row->group, $campaign->message,
+                    $campaign->attachments->isNotEmpty() ? $campaign->attachments : $campaign->attachment)
                 : SendResult::failed($row->group_name, SendErrorType::GroupNotFound, 'The group was deleted from the app.');
         } catch (Throwable $e) {
             report($e);

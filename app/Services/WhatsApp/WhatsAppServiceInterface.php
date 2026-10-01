@@ -28,8 +28,10 @@ interface WhatsAppServiceInterface
     public function disconnect(): void;
 
     /**
-     * Send one message (and optional attachment, with the text as caption) to a group.
+     * Send one message to a group, with any number of attachments and the text as caption.
      * Must not throw for expected problems: they are returned as a failed SendResult.
+     *
+     * @param  Media|iterable<int, Media>|null  $attachment  one file, or several in send order
      */
-    public function sendToGroup(Group $group, string $message, ?Media $attachment = null): SendResult;
+    public function sendToGroup(Group $group, string $message, Media|iterable|null $attachment = null): SendResult;
 }

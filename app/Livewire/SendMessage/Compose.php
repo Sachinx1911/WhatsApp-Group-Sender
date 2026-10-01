@@ -66,14 +66,15 @@ class Compose extends Component
         // "Send again" from Send History: same message, attachment and (still active) groups.
         if ($previous = Campaign::find(request()->integer('campaign'))) {
             $this->form->message = $previous->message;
-            $this->form->attachment_id = $previous->attachment_id;
+            $this->form->syncAttachments($previous->attachments->pluck('id')->all()
+                ?: array_filter([$previous->attachment_id]));
             $this->form->groups = Group::active()
                 ->whereIn('id', $previous->campaignGroups()->whereNotNull('group_id')->select('group_id'))
                 ->pluck('id')->map(fn ($id) => (string) $id)->all();
         }
 
         if (($media = request()->integer('media')) && Media::whereKey($media)->exists()) {
-            $this->form->attachment_id = $media;
+            $this->form->addAttachment($media);
         }
 
         if ($groups = array_filter(array_map('intval', (array) request()->query('groups', [])))) {
@@ -108,8 +109,11 @@ class Compose extends Component
         $this->form->message = $template->message;
         $this->form->template_id = $template->id;
 
-        if ($template->attachment_id) {
-            $this->form->attachment_id = $template->attachment_id;
+        $fromTemplate = $template->attachments->pluck('id')->all()
+            ?: array_filter([$template->attachment_id]);
+
+        if ($fromTemplate !== []) {
+            $this->form->syncAttachments($fromTemplate);
         }
 
         $this->resetValidation('form.message');
@@ -131,7 +135,8 @@ class Compose extends Component
     {
         try {
             $media = app(StoreUploadedMedia::class)->handle($this->upload, 'upload');
-            $this->form->attachment_id = $media->id;
+            $this->form->addAttachment($media->id);
+            unset($this->attachments);
             $this->resetValidation('form.message');
             $this->dispatch('toast', type: 'success', message: "“{$media->original_name}” attached and saved to the Media Library");
         } catch (ValidationException $e) {
@@ -144,21 +149,64 @@ class Compose extends Component
     #[On('media-picked')]
     public function attachFromLibrary(int $id, string $context): void
     {
-        if ($context === self::PICKER_CONTEXT && Media::whereKey($id)->exists()) {
-            $this->form->attachment_id = $id;
-            $this->resetValidation(['form.message', 'upload']);
+        if ($context !== self::PICKER_CONTEXT || ! Media::whereKey($id)->exists()) {
+            return;
         }
+
+        if (count($this->form->attachment_ids) >= SendForm::MAX_ATTACHMENTS) {
+            $this->dispatch('toast', type: 'warning', message: 'You can attach at most '.SendForm::MAX_ATTACHMENTS.' files to one message.');
+
+            return;
+        }
+
+        $this->form->addAttachment($id);
+        unset($this->attachments);
+        $this->resetValidation(['form.message', 'upload']);
     }
 
-    public function removeAttachment(): void
+    public function removeAttachment(?int $id = null): void
     {
-        $this->form->attachment_id = null;
+        // No id means the older single-attachment control: clear everything.
+        $id === null
+            ? $this->form->syncAttachments([])
+            : $this->form->removeAttachment($id);
+
+        unset($this->attachments);
     }
 
+    /** Every attached file, in send order. */
+    #[Computed]
+    public function attachments()
+    {
+        $ids = $this->form->attachmentIds();
+
+        if ($ids === []) {
+            return collect();
+        }
+
+        $byId = Media::whereKey($ids)->get()->keyBy('id');
+
+        // Preserve the admin's order, and drop anything deleted from the library meanwhile.
+        return collect($ids)->map(fn (int $id) => $byId->get($id))->filter()->values();
+    }
+
+    /**
+     * True when images and PDFs are mixed. WhatsApp cannot carry both in one message, so
+     * each group receives two, and the admin should know that before sending.
+     */
+    #[Computed]
+    public function mixedAttachmentKinds(): bool
+    {
+        $kinds = $this->attachments->map(fn (Media $media) => $media->isImage() ? 'image' : 'document')->unique();
+
+        return $kinds->count() > 1;
+    }
+
+    /** The first attachment, for screens and previews that show just one. */
     #[Computed]
     public function attachment(): ?Media
     {
-        return $this->form->attachment_id ? Media::find($this->form->attachment_id) : null;
+        return $this->attachments->first();
     }
 
     // ---- Groups ------------------------------------------------------------

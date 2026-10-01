@@ -29,16 +29,21 @@ class CreateCampaign
 
     /**
      * @param  array<int, int|string>  $groupIds
+     * @param  Media|iterable<int, Media>|null  $attachment  one file, or several in send order
      */
     public function handle(
         string $message,
-        ?Media $attachment,
+        Media|iterable|null $attachment,
         array $groupIds,
         bool $isTest = false,
         ?MessageTemplate $template = null,
         ?User $user = null,
         ?CarbonInterface $scheduledAt = null,
     ): Campaign {
+        // Accept one Media or a list, so existing single-attachment callers keep working.
+        $attachments = $attachment === null ? collect() : collect($attachment instanceof Media ? [$attachment] : $attachment)->values();
+        $first = $attachments->first();
+
         $groups = Group::active()->whereKey(array_map('intval', $groupIds))->orderBy('name')->get();
 
         if ($groups->isEmpty()) {
@@ -47,12 +52,13 @@ class CreateCampaign
 
         $scheduledAt = $scheduledAt?->toImmutable()->startOfMinute();
 
-        $campaign = DB::transaction(function () use ($message, $attachment, $groups, $isTest, $template, $user, $scheduledAt) {
+        $campaign = DB::transaction(function () use ($message, $attachments, $first, $groups, $isTest, $template, $user, $scheduledAt) {
             $campaign = Campaign::create([
-                'title' => $this->title($message, $attachment, $template, $isTest, $scheduledAt),
+                'title' => $this->title($message, $first, $template, $isTest, $scheduledAt),
                 'message' => $message,
-                'attachment_id' => $attachment?->id,
-                'attachment_name' => $attachment?->original_name,
+                // The first file, so single-attachment screens and history keep working.
+                'attachment_id' => $first?->id,
+                'attachment_name' => $first?->original_name,
                 'is_test' => $isTest,
                 'total_groups' => $groups->count(),
                 'pending_count' => $groups->count(),
@@ -62,6 +68,16 @@ class CreateCampaign
             ]);
 
             $now = now();
+
+            // The full list. original_name is snapshotted so history still reads correctly
+            // if the file is later deleted from the Media Library.
+            if ($attachments->isNotEmpty()) {
+                $campaign->attachments()->attach($attachments->values()
+                    ->mapWithKeys(fn (Media $media, int $i) => [
+                        $media->id => ['position' => $i, 'original_name' => $media->original_name],
+                    ])->all());
+            }
+
             CampaignGroup::insert($groups->map(fn (Group $group) => [
                 'campaign_id' => $campaign->id,
                 'group_id' => $group->id,
@@ -74,13 +90,13 @@ class CreateCampaign
 
             if (! $isTest) {
                 $template?->update(['usage_count' => $template->usage_count + 1, 'last_used_at' => $now]);
-                $attachment?->increment('usage_count');
+                $attachments->each->increment('usage_count');
             }
 
             return $campaign;
         });
 
-        Log::channel('whatsapp')->info('Campaign created', ['campaign' => $campaign->id, 'groups' => $groups->count(), 'test' => $isTest, 'scheduled_for' => $scheduledAt?->toDateTimeString()]);
+        Log::channel('whatsapp')->info('Campaign created', ['campaign' => $campaign->id, 'groups' => $groups->count(), 'attachments' => $attachments->count(), 'test' => $isTest, 'scheduled_for' => $scheduledAt?->toDateTimeString()]);
 
         if ($scheduledAt) {
             // Released by the queue at the chosen time; startNextIfIdle() ignores it until then.

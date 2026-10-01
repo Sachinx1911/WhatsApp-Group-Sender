@@ -216,7 +216,7 @@ const routes = {
         return sendJson(res, 400, { success: false, error_type: 'UNKNOWN_ERROR', error_message: 'Invalid JSON body.' });
       }
 
-      const { message, attachment_path: attachmentPath } = body;
+      const { message, attachment_path: attachmentPath, attachment_paths: attachmentPaths } = body;
       group = body.group;
 
       if (!group || typeof group !== 'string') {
@@ -227,9 +227,18 @@ const routes = {
         return sendJson(res, 200, { success: false, group, error_type: 'WHATSAPP_DISCONNECTED', error_message: 'WhatsApp is not connected.' });
       }
 
-      log(`send started: "${group}"${attachmentPath ? ' (with attachment)' : ''}`);
+      const fileCount = Array.isArray(attachmentPaths) && attachmentPaths.length
+        ? attachmentPaths.length
+        : (attachmentPath ? 1 : 0);
 
-      const result = await wa.sendToGroup(session.page, { group, message: message || '', attachmentPath: attachmentPath || null });
+      log(`send started: "${group}"${fileCount ? ` (${fileCount} attachment${fileCount > 1 ? 's' : ''})` : ''}`);
+
+      const result = await wa.sendToGroup(session.page, {
+        group,
+        message: message || '',
+        attachmentPath: attachmentPath || null,
+        attachmentPaths: Array.isArray(attachmentPaths) ? attachmentPaths : null,
+      });
       const seconds = ((Date.now() - startedAt) / 1000).toFixed(1);
 
       if (result.success) {

@@ -60,23 +60,48 @@
             </x-ui.card>
 
             {{-- Attachment --}}
-            <x-ui.card title="Attachment" subtitle="One image or PDF · optional">
-                @if ($attachment)
-                    <div class="flex items-center gap-3 rounded-xl border border-line p-3">
-                        @if ($attachment->isImage())
-                            <img src="{{ route('media.thumbnail', $attachment) }}" alt="" class="size-14 rounded-lg object-cover">
-                        @else
-                            <span class="grid h-14 w-12 place-items-center rounded-lg bg-danger-soft text-xs font-bold text-danger">PDF</span>
-                        @endif
-                        <span class="min-w-0 flex-1">
-                            <span class="block truncate text-sm font-medium">{{ $attachment->original_name }}</span>
-                            <span class="block text-xs text-muted">{{ $attachment->type->label() }} · {{ $attachment->humanSize() }}</span>
-                        </span>
-                        <x-ui.button variant="ghost" size="sm" x-on:click="$dispatch('pick-media', { context: '{{ \App\Livewire\SendMessage\Compose::PICKER_CONTEXT }}', type: '{{ config('educationhub.message.default_type') === 'text' ? '' : config('educationhub.message.default_type') }}' })">Change</x-ui.button>
-                        <button type="button" wire:click="removeAttachment" class="rounded-lg p-2 text-muted hover:bg-danger-soft hover:text-danger" aria-label="Remove attachment">
-                            <x-lucide-x class="size-4" />
-                        </button>
-                    </div>
+            <x-ui.card title="Attachments" subtitle="Images and PDFs · up to {{ \App\Livewire\Forms\SendForm::MAX_ATTACHMENTS }} · optional">
+                @if ($this->attachments->isNotEmpty())
+                    <ul class="space-y-2">
+                        @foreach ($this->attachments as $file)
+                            <li class="flex items-center gap-3 rounded-xl border border-line p-3">
+                                @if ($file->isImage())
+                                    <img src="{{ route('media.thumbnail', $file) }}" alt="" class="size-14 rounded-lg object-cover">
+                                @else
+                                    <span class="grid h-14 w-12 place-items-center rounded-lg bg-danger-soft text-xs font-bold text-danger">PDF</span>
+                                @endif
+                                <span class="min-w-0 flex-1">
+                                    <span class="block truncate text-sm font-medium">{{ $file->original_name }}</span>
+                                    <span class="block text-xs text-muted">{{ $file->type->label() }} · {{ $file->humanSize() }}</span>
+                                </span>
+                                <button type="button" wire:click="removeAttachment({{ $file->id }})" class="rounded-lg p-2 text-muted hover:bg-danger-soft hover:text-danger" aria-label="Remove {{ $file->original_name }}">
+                                    <x-lucide-x class="size-4" />
+                                </button>
+                            </li>
+                        @endforeach
+                    </ul>
+
+                    @if ($this->attachments->count() < \App\Livewire\Forms\SendForm::MAX_ATTACHMENTS)
+                        <div x-data="{ uploading: false, progress: 0 }"
+                            x-on:livewire-upload-start="uploading = true; progress = 0"
+                            x-on:livewire-upload-progress="progress = $event.detail.progress"
+                            x-on:livewire-upload-finish="uploading = false"
+                            x-on:livewire-upload-error="uploading = false"
+                            class="mt-3 flex flex-wrap items-center gap-2">
+                            <input x-ref="more" wire:model="upload" type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" class="sr-only">
+                            <x-ui.button variant="secondary" size="sm" icon="plus" x-on:click="$refs.more.click()">Add file</x-ui.button>
+                            <x-ui.button variant="secondary" size="sm" icon="image" x-on:click="$dispatch('pick-media', { context: '{{ \App\Livewire\SendMessage\Compose::PICKER_CONTEXT }}', type: '{{ config('educationhub.message.default_type') === 'text' ? '' : config('educationhub.message.default_type') }}' })">Add from Media Library</x-ui.button>
+                            <span x-show="uploading" x-cloak class="text-xs text-muted" x-text="`Uploading ${progress}%`"></span>
+                        </div>
+                    @endif
+
+                    @if ($this->attachments->count() > 1 && $this->mixedAttachmentKinds)
+                        {{-- WhatsApp cannot put photos and documents in one message. --}}
+                        <p class="mt-3 flex items-start gap-2 rounded-xl bg-canvas px-3.5 py-2.5 text-xs text-muted">
+                            <x-lucide-info class="mt-px size-3.5 shrink-0" />
+                            Images and PDFs cannot share one WhatsApp message, so each group gets two: the images with your text, then the PDFs.
+                        </p>
+                    @endif
                 @else
                     <div x-data="{ dragging: false, uploading: false, progress: 0 }"
                         x-on:livewire-upload-start="uploading = true; progress = 0"
@@ -89,8 +114,8 @@
                             class="flex cursor-pointer flex-col items-center rounded-2xl border-2 border-dashed px-6 py-7 text-center transition hover:border-primary/50">
                             <x-lucide-upload x-show="!uploading" class="size-6 text-primary" />
                             <x-lucide-loader-circle x-show="uploading" x-cloak class="size-6 animate-spin text-primary" />
-                            <span class="mt-2 text-sm font-medium">Drag & drop image or PDF here</span>
-                            <span class="mt-1 text-xs text-muted">JPG, JPEG, PNG or PDF</span>
+                            <span class="mt-2 text-sm font-medium">Drag & drop images or PDFs here</span>
+                            <span class="mt-1 text-xs text-muted">JPG, JPEG, PNG or PDF · add them one at a time</span>
                             <span x-show="uploading" x-cloak class="mt-2 text-xs text-muted" x-text="`Uploading ${progress}%`"></span>
                             <input x-ref="file" wire:model="upload" type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" class="sr-only">
                         </label>
@@ -101,6 +126,7 @@
                     </div>
                 @endif
                 @error('upload') <p class="mt-2 text-xs text-danger">{{ $message }}</p> @enderror
+                @error('form.attachment_ids') <p class="mt-2 text-xs text-danger">{{ $message }}</p> @enderror
             </x-ui.card>
 
             {{-- Preview --}}
@@ -241,8 +267,14 @@
                         <div class="flex justify-between gap-3 px-3.5 py-2.5"><dt class="text-muted">Students (approx.)</dt><dd class="font-medium">{{ number_format($selection['members']) }}</dd></div>
                     @endif
                     <div class="flex justify-between gap-3 px-3.5 py-2.5">
-                        <dt class="text-muted">Attachment</dt>
-                        <dd class="min-w-0 truncate text-right font-medium">{{ $attachment ? $attachment->original_name.' ('.$attachment->humanSize().')' : 'None' }}</dd>
+                        <dt class="text-muted">{{ $this->attachments->count() > 1 ? 'Attachments' : 'Attachment' }}</dt>
+                        <dd class="min-w-0 text-right font-medium">
+                            @forelse ($this->attachments as $file)
+                                <span class="block truncate">{{ $file->original_name }} ({{ $file->humanSize() }})</span>
+                            @empty
+                                None
+                            @endforelse
+                        </dd>
                     </div>
                     <div class="flex justify-between gap-3 px-3.5 py-2.5"><dt class="text-muted">Estimated time</dt><dd class="font-medium">{{ $this->estimate() }}</dd></div>
                 </dl>

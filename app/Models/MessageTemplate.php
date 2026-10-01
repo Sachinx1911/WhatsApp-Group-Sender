@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 #[Fillable(['title', 'category_id', 'message', 'attachment_id', 'tags', 'usage_count', 'last_used_at'])]
 class MessageTemplate extends Model
@@ -31,9 +32,22 @@ class MessageTemplate extends Model
         return $this->belongsTo(Category::class);
     }
 
+    /**
+     * The first attachment. Kept so screens that show one file keep working; the full
+     * list lives in attachments().
+     */
     public function attachment(): BelongsTo
     {
         return $this->belongsTo(Media::class, 'attachment_id');
+    }
+
+    /** Every image and PDF on this template, in the order the admin arranged them. */
+    public function attachments(): BelongsToMany
+    {
+        return $this->belongsToMany(Media::class, 'message_template_media')
+            ->withPivot('position')
+            ->withTimestamps()
+            ->orderBy('message_template_media.position');
     }
 
     /**

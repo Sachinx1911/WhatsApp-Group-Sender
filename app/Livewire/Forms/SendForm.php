@@ -19,7 +19,14 @@ class SendForm extends Form
 {
     public string $message = '';
 
+    /**
+     * First attachment. Derived from attachment_ids and kept so the single-attachment
+     * screens and the campaigns.attachment_id column keep working.
+     */
     public ?int $attachment_id = null;
+
+    /** @var array<int, int> every attached media id, in send order */
+    public array $attachment_ids = [];
 
     /** @var array<int, int> selected group ids */
     public array $groups = [];
@@ -60,15 +67,61 @@ class SendForm extends Form
         return $at->startOfMinute();
     }
 
+    /** Most files WhatsApp will accept in one go before the preview becomes unwieldy. */
+    public const MAX_ATTACHMENTS = 10;
+
+    /**
+     * The files to send. Falls back to attachment_id when only that was set: older code
+     * paths and deep links still assign the single property, and losing their attachment
+     * silently would be worse than carrying it.
+     *
+     * @return array<int, int>
+     */
+    public function attachmentIds(): array
+    {
+        if ($this->attachment_ids !== []) {
+            return $this->attachment_ids;
+        }
+
+        return $this->attachment_id ? [$this->attachment_id] : [];
+    }
+
+    public function hasAttachment(): bool
+    {
+        return $this->attachmentIds() !== [];
+    }
+
+    /** Keep attachment_id pointing at the first file in the list. */
+    public function syncAttachments(array $ids): void
+    {
+        $this->attachment_ids = array_values(array_unique(array_map('intval', $ids)));
+        $this->attachment_id = $this->attachment_ids[0] ?? null;
+    }
+
+    public function addAttachment(int $id): void
+    {
+        $this->syncAttachments([...$this->attachment_ids, $id]);
+    }
+
+    public function removeAttachment(int $id): void
+    {
+        $this->syncAttachments(array_filter($this->attachment_ids, fn ($existing) => $existing !== $id));
+    }
+
     public function messageRules(): array
     {
         return [
-            'message' => ['nullable', 'string', 'required_without:attachment_id', function ($attribute, $value, $fail) {
+            // required_without_all, not a closure: Laravel skips non-implicit rules when the
+            // value is empty, so a closure here would never run for a blank message and an
+            // empty campaign would sail through.
+            'message' => ['nullable', 'string', 'required_without_all:attachment_id,attachment_ids', function ($attribute, $value, $fail) {
                 if (WhatsAppFormatter::length($value) > WhatsAppFormatter::MAX_LENGTH) {
                     $fail('The message may not be longer than '.number_format(WhatsAppFormatter::MAX_LENGTH).' characters.');
                 }
             }],
             'attachment_id' => ['nullable', 'integer', Rule::exists(Media::class, 'id')],
+            'attachment_ids' => ['nullable', 'array', 'max:'.self::MAX_ATTACHMENTS],
+            'attachment_ids.*' => ['integer', Rule::exists(Media::class, 'id')],
         ];
     }
 
@@ -85,7 +138,8 @@ class SendForm extends Form
     public function messages(): array
     {
         return [
-            'message.required_without' => 'Write a message or attach an image or PDF.',
+            'message.required_without_all' => 'Write a message or attach an image or PDF.',
+            'attachment_ids.max' => 'Attach at most :max files to one message.',
             'groups.required' => 'Select at least one group.',
             'groups.min' => 'Select at least one group.',
             'groups.max' => 'Select at most :max groups in one campaign.',

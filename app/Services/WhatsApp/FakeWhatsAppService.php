@@ -6,6 +6,7 @@ use App\Enums\SendErrorType;
 use App\Enums\WhatsAppConnectionStatus;
 use App\Models\Group;
 use App\Models\Media;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -71,7 +72,7 @@ class FakeWhatsAppService implements WhatsAppServiceInterface
         return $this->connected() ? WhatsAppConnectionStatus::Connected : WhatsAppConnectionStatus::Disconnected;
     }
 
-    public function sendToGroup(Group $group, string $message, ?Media $attachment = null): SendResult
+    public function sendToGroup(Group $group, string $message, Media|iterable|null $attachment = null): SendResult
     {
         if ($delay = (int) config('educationhub.whatsapp.fake.delay_ms', 0)) {
             usleep($delay * 1000);
@@ -91,9 +92,24 @@ class FakeWhatsAppService implements WhatsAppServiceInterface
             return SendResult::failed($group->name, $type, technical: "[fake] simulated {$type->value}");
         }
 
-        $this->sent[] = ['group' => $group->name, 'message' => $message, 'attachment' => $attachment?->original_name];
+        $files = $this->fileList($attachment);
+
+        $this->sent[] = [
+            'group' => $group->name,
+            'message' => $message,
+            'attachment' => $files->first()?->original_name,
+            'attachments' => $files->pluck('original_name')->all(),
+        ];
 
         return SendResult::sent($group->name);
+    }
+
+    /** @return Collection<int, Media> */
+    private function fileList(Media|iterable|null $attachment)
+    {
+        return $attachment === null
+            ? collect()
+            : collect($attachment instanceof Media ? [$attachment] : $attachment)->values();
     }
 
     private function connected(): bool

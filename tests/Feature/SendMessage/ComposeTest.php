@@ -55,7 +55,7 @@ class ComposeTest extends TestCase
             ->assertSeeLivewire(Compose::class)
             ->assertSee('Create and distribute educational content to selected WhatsApp groups')
             ->assertSee('Write your message here...')
-            ->assertSee('Drag & drop image or PDF here', false)
+            ->assertSee('Drag & drop images or PDFs here', false)
             ->assertSee('MPSC Batch 01')
             ->assertSee('250 members')
             ->assertSee('Send Test')
@@ -173,7 +173,7 @@ class ComposeTest extends TestCase
 
         Livewire::test(Compose::class)
             ->call('review')
-            ->assertHasErrors(['form.message' => 'required_without', 'form.groups' => 'required'])
+            ->assertHasErrors(['form.message' => 'Write a message or attach an image or PDF.', 'form.groups' => 'required'])
             ->assertNotDispatched('open-modal');
 
         // An attachment alone is enough (WhatsApp allows media without a caption).

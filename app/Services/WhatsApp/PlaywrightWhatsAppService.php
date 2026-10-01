@@ -56,14 +56,23 @@ class PlaywrightWhatsAppService implements WhatsAppServiceInterface
         $this->safeRequest(fn () => $this->request(timeout: 30)->post('/disconnect'));
     }
 
-    public function sendToGroup(Group $group, string $message, ?Media $attachment = null): SendResult
+    public function sendToGroup(Group $group, string $message, Media|iterable|null $attachment = null): SendResult
     {
+        $files = $attachment === null
+            ? collect()
+            : collect($attachment instanceof Media ? [$attachment] : $attachment)->values();
+
+        $paths = $files->map(fn (Media $media) => Storage::disk('local')->path($media->path))->all();
+
         try {
             $response = $this->request(timeout: self::SEND_TIMEOUT)->post('/send', array_filter([
                 'group' => $group->name,
                 'message' => $message,
-                'attachment_path' => $attachment ? Storage::disk('local')->path($attachment->path) : null,
-            ], fn ($value) => $value !== null && $value !== ''));
+                // attachment_path is still sent for a single file so an older worker keeps
+                // working; attachment_paths carries the whole list.
+                'attachment_path' => $paths[0] ?? null,
+                'attachment_paths' => $paths,
+            ], fn ($value) => $value !== null && $value !== '' && $value !== []));
         } catch (ConnectionException $e) {
             // A refused connection means no worker. A timeout means the worker took the
             // request and may well have sent the message: never put that row back in the
