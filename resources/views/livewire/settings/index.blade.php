@@ -118,8 +118,8 @@
                     <div class="grid gap-5 sm:grid-cols-2">
                         <div>
                             <label for="s-delay" class="mb-1.5 block text-[13px] font-medium">Delay between groups (seconds)</label>
-                            <input wire:model="s.delay_seconds" id="s-delay" type="number" min="5" max="300" class="{{ $input }}">
-                            <p class="mt-1.5 text-xs {{ $err('delay_seconds') ? 'text-danger' : 'text-muted' }}">{{ $err('delay_seconds') ?: 'A fixed pause after each group. Minimum 5 seconds; 15 is recommended.' }}</p>
+                            <input wire:model="s.delay_seconds" id="s-delay" type="number" min="3" max="300" class="{{ $input }}">
+                            <p class="mt-1.5 text-xs {{ $err('delay_seconds') ? 'text-danger' : 'text-muted' }}">{{ $err('delay_seconds') ?: 'A fixed pause after each group. Minimum 3 seconds; 15 is recommended. Very short pauses raise the risk of WhatsApp restricting the account.' }}</p>
                         </div>
                         <div>
                             <label for="s-daily" class="mb-1.5 block text-[13px] font-medium">Daily sending limit</label>

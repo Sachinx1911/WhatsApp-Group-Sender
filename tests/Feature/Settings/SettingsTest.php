@@ -56,7 +56,7 @@ class SettingsTest extends TestCase
     {
         $this->expectException(ValidationException::class);
 
-        Settings::set(['educationhub.sending.delay_seconds' => 2]); // minimum is 5
+        Settings::set(['educationhub.sending.delay_seconds' => 2]); // minimum is 3
     }
 
     public function test_reset_restores_the_defaults(): void

@@ -29,7 +29,7 @@ class Settings
     {
         return [
             // Sending
-            'educationhub.sending.delay_seconds' => ['required', 'integer', 'min:5', 'max:300'],
+            'educationhub.sending.delay_seconds' => ['required', 'integer', 'min:3', 'max:300'],
             'educationhub.sending.daily_limit' => ['required', 'integer', 'min:0', 'max:10000'],
             'educationhub.sending.max_groups_per_campaign' => ['required', 'integer', 'min:1', 'max:1000'],
             'educationhub.sending.test_group_id' => ['nullable', 'integer', Rule::exists('groups', 'id')],
